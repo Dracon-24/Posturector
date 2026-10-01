@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Expo
+.expo/
+.expo-shared/
+
+# macOS
+.DS_Store
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+
+# IDE/editor files
+.vscode/
+.idea/
+
+# SQLite runtime database
+backend/posture.db
+backend/posture.db-*
