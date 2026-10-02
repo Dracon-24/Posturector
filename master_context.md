@@ -113,7 +113,7 @@ analysis.
 
 # 4. CURRENT PROJECT STRUCTURE
 
-Expected structure:
+Current relevant structure:
 
 ``` text
 posture-belt/
@@ -123,6 +123,11 @@ posture-belt/
 ├── app.json
 ├── App.tsx
 ├── .gitignore
+├── AGENTS.md
+├── master_context.md
+│
+├── models/
+│   └── postureModel.ts
 │
 ├── processing/
 │   ├── calibration.ts
@@ -147,12 +152,16 @@ posture-belt/
     ├── package.json
     ├── package-lock.json
     ├── tsconfig.json
-    ├── posture.db
-    └── src/
-        ├── server.ts
+    ├── posture.db                  # runtime data, ignored by Git
+    ├── src/
+        ├── analytics.ts
         ├── database.ts
+        ├── server.ts
         └── routes/
+            ├── metrics.ts
             └── sessions.ts
+    └── test/
+        └── sessions.test.ts
 ```
 
 There are intentionally two `package.json` files:
@@ -535,6 +544,14 @@ They are **not medical thresholds**.
 
 The calibration confidence is based on the stability and quantity of
 collected measurements.
+
+Calibration cannot be restarted while an active monitoring session is
+running. `startCalibration()` checks `monitoringActive.current`, and the
+"Calibrate Again" control is unavailable during active monitoring. The
+user must explicitly stop monitoring, allowing the existing session
+finalization, metric calculation, and asynchronous upload lifecycle to
+run before recalibrating. Calibration is not adapted or restarted during
+an active session.
 
 ------------------------------------------------------------------------
 
@@ -1258,11 +1275,12 @@ Backend technology:
 
 ``` text
 Node.js
-Express
-TypeScript
+Express 5.2.1
+TypeScript 5.9.3
 SQLite
 better-sqlite3
 cors
+ts-node-dev
 ```
 
 The backend runs on:
@@ -1294,9 +1312,14 @@ Responsibilities:
 
 -   create Express server
 -   enable CORS
--   parse JSON
--   mount session routes
+-   parse JSON with `express.json({ limit: '50mb' })`
+-   mount session and historical-metrics routes
 -   listen on port 3000
+
+`app` and `startServer()` are exported so the backend can be exercised
+by the regression tests without launching a separate production
+process. Historical analytics remains outside the real-time posture
+processing loop.
 
 Expected startup message:
 
@@ -1325,6 +1348,13 @@ File:
 ``` text
 backend/posture.db
 ```
+
+The production path is resolved from `__dirname`, rather than the
+process working directory, so launching the backend from different
+directories still targets `backend/posture.db`. Tests override this path
+through `PJT_I_DATABASE_PATH` and use an isolated temporary database.
+
+The runtime database and its SQLite sidecar files are ignored by Git.
 
 SQLite is configured with WAL mode.
 
@@ -1363,9 +1393,12 @@ backend/src/routes/sessions.ts
 Current endpoints:
 
 ``` http
+GET /
 POST /api/sessions
 GET /api/sessions
 GET /api/sessions/:id
+GET /api/metrics/summary
+GET /api/metrics/trends
 ```
 
 ------------------------------------------------------------------------
@@ -1375,6 +1408,22 @@ GET /api/sessions/:id
 Used to upload a completed session from the mobile application.
 
 The completed session and calculated metrics are sent to the backend.
+
+The endpoint validates the complete current session-upload structure at
+runtime. Validation includes:
+
+-   required session, calibration, sample, feedback, correction, and
+    metric fields
+-   finite and non-negative numeric requirements where applicable
+-   integer counts
+-   posture-direction values
+-   nullable correction-time fields
+-   deviation-history entries
+-   consistency between session counts, arrays, and metric counts
+
+Malformed payloads return HTTP `400` with validation details. Duplicate
+session IDs return HTTP `409`. Payloads are rejected rather than silently
+repaired or transformed.
 
 ------------------------------------------------------------------------
 
@@ -1386,13 +1435,16 @@ Used for:
 
 -   debugging
 -   historical retrieval
--   future analytics
+-   direct inspection of persisted session summaries
 
 ------------------------------------------------------------------------
 
 ## GET /api/sessions/:id
 
 Returns one stored session by ID.
+
+`GET /api/metrics/summary` and `GET /api/metrics/trends` expose the
+implemented historical analytics described later in this document.
 
 ------------------------------------------------------------------------
 
@@ -1404,28 +1456,23 @@ File:
 services/apiService.ts
 ```
 
-The frontend uploads completed sessions asynchronously.
+The frontend uploads completed sessions asynchronously and retrieves
+historical analytics through the same service.
 
-The API base URL is configured using the Mac's LAN IP rather than
-`localhost`.
-
-At the time of successful testing, the Mac's LAN IP was:
+The API base URL is supplied in the root-level, Git-ignored
+`.env.local` file:
 
 ``` text
-10.219.193.17
+EXPO_PUBLIC_API_BASE_URL=http://<local-backend-host>:3000
 ```
 
-The application therefore used:
-
-``` ts
-const API_BASE_URL = 'http://10.219.193.17:3000';
-```
-
-Important:
-
-The LAN IP may change when the computer changes networks.
-
-If the IP changes, the frontend API URL must be updated.
+Expo SDK 57 exposes `EXPO_PUBLIC_*` variables to application code.
+`services/apiService.ts` reads
+`process.env.EXPO_PUBLIC_API_BASE_URL` and fails clearly when it is not
+configured. Changing the development LAN address therefore does not
+require editing application logic. The value is development
+configuration, not a secret, but local addresses and environment files
+must not be committed.
 
 ------------------------------------------------------------------------
 
@@ -1463,21 +1510,15 @@ http://<MAC-LAN-IP>:3000
 
 ------------------------------------------------------------------------
 
-# 46. NETWORK DEBUGGING THAT WAS COMPLETED
+# 46. NETWORK CONFIGURATION AND DEBUGGING
 
-The Mac's interfaces were checked using:
+The development host's current LAN address can be checked using:
 
 ``` bash
 ifconfig | grep "inet "
 ```
 
-The relevant LAN address was:
-
-``` text
-10.219.193.17
-```
-
-After updating the API service, communication succeeded.
+After updating `.env.local`, Expo must reload the environment value.
 
 The backend responded correctly to requests from the Android prototype.
 
@@ -1518,6 +1559,21 @@ A real posture-monitoring session was successfully uploaded.
 The real session was visible through the backend/API.
 
 Therefore the current persistence architecture is operational.
+
+Current repository validation established during the implemented
+checkpoints includes:
+
+-   frontend TypeScript validation with `npx tsc --noEmit`
+-   Expo SDK 57 public-configuration validation
+-   Expo Android bundle export validation
+-   backend TypeScript compilation
+-   the backend regression suite
+-   direct backend endpoint and SQLite-persistence verification
+-   `git diff --check` before checkpoint commits
+
+These are engineering/software validations. They are not clinical
+validation, medical efficacy evidence, hardware validation, or a
+large-scale user study.
 
 ------------------------------------------------------------------------
 
@@ -1575,12 +1631,15 @@ session recording
 performance metrics
 backend upload
 monitoringActive lifecycle
+historical analytics state and UI
+startup/manual/post-upload analytics loading
+coalesced trailing-refresh coordination
 ```
 
-It imports:
+It imports session upload and historical analytics functions/types from:
 
 ``` ts
-import { uploadSession } from './services/apiService';
+services/apiService.ts
 ```
 
 The current stop-monitoring lifecycle has been corrected to avoid
@@ -1596,6 +1655,39 @@ reference.
 
 That was removed/replaced with the established session reference and
 `endSession(...)` flow.
+
+Historical analytics is rendered after completed-session Performance
+Metrics and before calibration controls. It is hidden during calibration
+and active monitoring so it remains supplementary to the real-time
+workflow.
+
+------------------------------------------------------------------------
+
+## Backend regression tests
+
+The backend regression suite uses Node's built-in `node:test` facilities
+with `ts-node/register`; no large testing framework was introduced. The
+suite starts the exported Express application on an ephemeral port and
+uses a temporary SQLite database selected through
+`PJT_I_DATABASE_PATH`. Cleanup closes the server/database and removes
+the temporary directory, so tests do not modify `backend/posture.db`.
+
+Coverage includes:
+
+-   health endpoint
+-   valid session POST
+-   session collection and detail GET
+-   missing-session `404`
+-   malformed-payload `400`
+-   non-finite numeric rejection
+-   duplicate-ID `409`
+-   realistically sized payload acceptance
+-   isolated SQLite persistence
+-   empty historical analytics
+-   single-session and multi-session aggregation
+-   chronological trend shape and field exclusion
+-   incompatible legacy-session exclusion/counting
+-   analytics database-failure responses
 
 ------------------------------------------------------------------------
 
@@ -1788,6 +1880,25 @@ even if the backend is temporarily unreachable.
 
 ------------------------------------------------------------------------
 
+## Historical analytics frontend limitations
+
+The current frontend intentionally has:
+
+-   no charts or charting dependency
+-   no date-range filters
+-   no pagination
+-   no analytics polling
+-   no cloud analytics
+-   no authentication or multi-user separation
+-   no frontend historical-analytics unit-test framework
+
+Historical trend rows are mapped as ordinary views inside the existing
+`ScrollView`. This is appropriate for the currently expected modest
+dataset, but very large histories may eventually require pagination or
+rendering optimization.
+
+------------------------------------------------------------------------
+
 # 54. CURRENT DEVELOPMENT STATUS
 
 ## Completed
@@ -1843,6 +1954,27 @@ Completed.
 
 Verified.
 
+### Persistence hardening
+
+Implemented: larger realistic-session request limit, full runtime
+payload validation, non-finite numeric rejection, explicit duplicate-ID
+handling, and stable production database path resolution.
+
+### Backend regression tests
+
+Implemented with an isolated temporary SQLite database.
+
+### Historical analytics backend
+
+Implemented with summary and chronological trend endpoints derived from
+persisted compatible sessions.
+
+### Historical analytics frontend
+
+Implemented with startup loading, manual refresh, post-upload refresh,
+loading/error/empty states, and single-request/trailing-refresh
+coordination.
+
 ------------------------------------------------------------------------
 
 # 55. NEXT IMPLEMENTATION ROADMAP
@@ -1850,89 +1982,171 @@ Verified.
 The next development stages are:
 
 ``` text
-1. Historical Analytics
-2. Adaptive Feedback
-3. Final Hardware Integration
-4. Experimental Evaluation
+1. Adaptive Feedback research and design
+2. Final Hardware Integration
+3. Experimental Evaluation
+4. Production-hardening work if required
 ```
 
-The immediate next task is:
-
-# HISTORICAL ANALYTICS
+Historical analytics is implemented. Adaptive feedback remains future
+work and must not be described as implemented.
 
 ------------------------------------------------------------------------
 
-# 56. HISTORICAL ANALYTICS --- NEXT TASK
+# 56. HISTORICAL ANALYTICS --- IMPLEMENTED
 
-The first analytics backend endpoints should be:
+Historical analytics is implemented through:
 
 ``` http
 GET /api/metrics/summary
 GET /api/metrics/trends
 ```
 
-These should use stored sessions rather than changing the real-time
-posture-processing pipeline.
+Files:
+
+``` text
+backend/src/analytics.ts
+backend/src/routes/metrics.ts
+backend/src/server.ts
+services/apiService.ts
+App.tsx
+```
+
+Analytics is calculated from persisted compatible sessions. Legacy or
+incompatible rows are excluded from calculations and counted. The
+analytics backend is not part of the real-time IMU-to-feedback loop.
 
 ------------------------------------------------------------------------
 
 # 57. HISTORICAL SUMMARY
 
-The historical summary should eventually aggregate information such as:
+`GET /api/metrics/summary` returns:
 
 ``` text
-total sessions
-total monitored time
-average consistency
-average correction time
-total feedback events
-total completed corrections
-overall completion rate
-average sampling rate
+totalSessions
+includedSessions
+excludedSessions
+totalMonitoredDuration
+averageConsistency
+averageCorrectionTime
+totalFeedbackEvents
+totalCompletedCorrections
+overallCompletionRate
+averageSamplingRate
 ```
 
-The exact UI and aggregation fields should remain consistent with the
-currently implemented metrics.
+Historical consistency is duration-weighted:
+
+``` text
+sum(timeInGoodPosture) / sum(monitoredDuration) × 100
+```
+
+Historical sampling rate is aggregate:
+
+``` text
+sum(sampleCount) / (sum(monitoredDuration) / 1000)
+```
+
+Average correction time is calculated across the individual completed
+correction-response times, not by averaging session averages. Overall
+completion rate is total completed corrections divided by total
+feedback events.
+
+The backend does not calculate historical mean deviation, maximum
+deviation, deviation percentiles, normalized deviation scores, or other
+invented aggregate deviation metrics.
 
 ------------------------------------------------------------------------
 
 # 58. HISTORICAL TRENDS
 
-The trends endpoint should support longitudinal analysis such as:
+`GET /api/metrics/trends` returns compatible sessions ordered by
+`startTime` ascending. Each trend record contains:
 
 ``` text
-consistency over sessions
-correction time over sessions
-feedback frequency over sessions
-completed corrections over sessions
-direction-specific correction behavior
+id
+startTime
+endTime
+monitoredDuration
+sampleCount
+actualSamplingRate
+consistency
+averageCorrectionTime
+feedbackEvents
+completedCorrections
+completionRate
+timeInGoodPosture
+longestContinuousGoodPosture
+postureSpecific
+directionCorrectionTimes
 ```
 
-The purpose is to determine whether the user's posture behavior changes
-over time.
+The endpoint deliberately omits raw posture samples, calibration data,
+deviation history, and correction-response arrays.
 
 ------------------------------------------------------------------------
 
 # 59. HISTORICAL ANALYTICS UI
 
-After backend analytics endpoints are implemented, the frontend should
-provide a historical analytics section.
+Historical Analytics is implemented in `App.tsx`, using typed API
+functions from `services/apiService.ts`.
 
-Potential current-data-supported displays include:
+The frontend provides:
 
 ``` text
-Session history
-Consistency trend
-Average correction time
-Feedback frequency
-Correction completion rate
-Direction-specific correction time
-Monitoring duration
-Actual sampling rate
+startup summary/trend loading
+manual refresh
+refresh after successful session upload
+loading and refreshing states
+error state
+empty state
+historical summary
+chronological per-session trend rows
 ```
 
-Do not introduce metrics that are not actually computed or supported by
-stored data.
+The section appears after completed-session Performance Metrics and
+before calibration controls. It is hidden while calibration or active
+monitoring is running and becomes visible again when monitoring is
+inactive.
+
+The summary displays the implemented backend summary fields, including
+included/excluded counts. Trend rows display date/time, monitored
+duration, consistency, average correction time, feedback events,
+completed corrections, completion rate, and sampling rate. Nullable
+averages display `N/A`; no placeholder or invented values are created.
+
+### Loading and refresh lifecycle
+
+``` text
+App startup
+→ fetch summary and trends concurrently
+
+Session completion
+→ finalize session
+→ calculate metrics
+→ upload completed session
+→ upload succeeds
+→ refresh summary and trends
+```
+
+Upload failure does not trigger the post-upload analytics refresh. An
+analytics failure preserves previously loaded data, displays an error,
+and does not affect calibration, monitoring, feedback, correction
+response, session finalization, or upload.
+
+### Request coordination
+
+Only one analytics load is active at a time. If another refresh is
+requested while a load is active, a Boolean pending flag records one
+coalesced trailing refresh. Multiple triggers do not create multiple
+queued requests. When the active request finishes—even if it fails—the
+pending flag is cleared before exactly one trailing load begins.
+
+This prevents a successful session upload from silently losing its
+analytics refresh when another load is already running. The mechanism
+does not form a generic queue or background worker, does not poll, and
+does not recursively refresh without an external trigger. Pending work
+is cleared on component unmount.
 
 ------------------------------------------------------------------------
 
@@ -2155,7 +2369,17 @@ HTTP
 Express backend
     ↓
 SQLite
+    ↓
+Historical analytics aggregation
+    ↓
+GET /api/metrics/summary + /trends
+    ↓
+Frontend Historical Analytics UI
 ```
+
+The IMU-to-feedback portion remains local and real-time. Session upload
+and historical retrieval are asynchronous data flows and do not decide
+real-time feedback.
 
 ------------------------------------------------------------------------
 
@@ -2180,13 +2404,13 @@ When modifying the project:
 
 # 68. IMPORTANT CURRENT NETWORK NOTE
 
-The currently known working LAN address was:
+The development LAN address is intentionally not hard-coded in source or
+in this document. It is supplied through:
 
 ``` text
-10.219.193.17
+.env.local
+EXPO_PUBLIC_API_BASE_URL=http://<local-backend-host>:3000
 ```
-
-This is not guaranteed to remain permanent.
 
 If backend upload fails with a connection error such as:
 
@@ -2200,13 +2424,9 @@ first check:
 ifconfig | grep "inet "
 ```
 
-Then update:
-
-``` text
-services/apiService.ts
-```
-
-with the current reachable Mac LAN IP.
+Then update `.env.local` with the reachable development host and reload
+Expo. Do not edit `services/apiService.ts` or commit the environment
+file.
 
 Also confirm that:
 
@@ -2242,16 +2462,28 @@ Performance metrics
 Node.js backend
 SQLite persistence
 Real session upload
+Hardened session persistence
+Backend regression tests
+Historical analytics backend
+Historical analytics frontend
+Analytics refresh race protection
 ```
 
 ### Not yet implemented / future
 
 ``` text
-Historical analytics endpoints/UI
-Adaptive feedback
+Adaptive feedback beyond current fixed behavior
+ML-based posture classification
 Final MPU6050 + ESP32 integration
 Physical vibration motor
+Cloud backend
+Authentication and multi-user accounts
+Offline upload queue/retry
+Advanced historical deviation analytics
+Large-scale historical rendering optimization
 Large-scale experimental evaluation
+Clinical validation or medical claims
+Production deployment
 ```
 
 These future components should not be presented as completed.
@@ -2265,26 +2497,25 @@ At the current stage:
 ``` text
                     PJT-I
                      │
-        ┌────────────┴────────────┐
-        │                         │
-   REAL-TIME                     DATA
-   PIPELINE                    PIPELINE
-        │                         │
-        ↓                         ↓
-     IMU input                Session
-        ↓                    recording
- Orientation                     ↓
-        ↓                    Metrics
- Complementary                    ↓
- Filter                         API
-        ↓                         ↓
- Personalization              Backend
-        ↓                         ↓
- Stability                     SQLite
-        ↓
- Persistence
-        ↓
- Feedback
+        ┌────────────┴─────────────────────┐
+        │                                  │
+   REAL-TIME                          ASYNC DATA
+   PIPELINE                           PIPELINE
+        │                                  │
+        ↓                                  ↓
+     IMU input                     Completed Session
+        ↓                                  ↓
+ Orientation                            Metrics
+        ↓                                  ↓
+ Complementary Filter                    API
+        ↓                                  ↓
+ Personalization                       Backend
+        ↓                                  ↓
+ Stability                            SQLite
+        ↓                                  ↓
+ Persistence                  Historical Analytics
+        ↓                                  ↓
+ Feedback                      Metrics API + UI
         ↓
  Correction
 ```
@@ -2293,41 +2524,22 @@ The real-time processing pipeline is operational.
 
 The session persistence pipeline is operational.
 
-The next major software feature is historical analytics.
+The historical analytics backend and frontend are operational. They are
+fed by persisted completed sessions and remain separate from the
+real-time feedback path.
 
 ------------------------------------------------------------------------
 
 # 71. IMMEDIATE NEXT ACTION
 
-Implement historical analytics without modifying the validated real-time
-posture pipeline.
+Historical analytics is complete at the current prototype scope. The
+next major planned phase is adaptive-feedback research and design.
 
-Recommended order:
-
-``` text
-Step 1:
-Create backend aggregation logic.
-
-Step 2:
-Implement:
-GET /api/metrics/summary
-
-Step 3:
-Implement:
-GET /api/metrics/trends
-
-Step 4:
-Test both endpoints using stored real sessions.
-
-Step 5:
-Create frontend historical analytics UI.
-
-Step 6:
-Verify that historical metrics match the session-level metrics.
-
-Step 7:
-Only after analytics are stable, begin adaptive feedback.
-```
+That work must remain separate from calibration baseline semantics and
+must not casually change the validated real-time thresholds, filtering,
+stability, persistence, or continuous-feedback behavior. No adaptive
+feedback mechanism, machine learning model, or automatic parameter
+update is currently implemented.
 
 ------------------------------------------------------------------------
 
