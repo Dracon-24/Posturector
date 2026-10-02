@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 
 import './database';
+import metricsRoutes from './routes/metrics';
 import sessionRoutes from './routes/sessions';
 
 export const app = express();
@@ -18,6 +19,7 @@ app.get('/', (_req, res) => {
 });
 
 app.use('/api/sessions', sessionRoutes);
+app.use('/api/metrics', metricsRoutes);
 
 export function startServer(port: number = PORT) {
     return app.listen(port, '0.0.0.0', () => {
