@@ -67,7 +67,13 @@ import {
   calculatePerformanceMetrics,
 } from './processing/performanceMetrics';
 
-import { uploadSession } from './services/apiService';
+import {
+  HistoricalSummary,
+  HistoricalTrends,
+  fetchHistoricalSummary,
+  fetchHistoricalTrends,
+  uploadSession,
+} from './services/apiService';
 
 
 // =====================================
@@ -181,6 +187,23 @@ export default function App() {
 
 
   // =====================================
+  // HISTORICAL ANALYTICS STATE
+  // =====================================
+
+  const [historicalSummary, setHistoricalSummary] =
+    useState<HistoricalSummary | null>(null);
+
+  const [historicalTrends, setHistoricalTrends] =
+    useState<HistoricalTrends | null>(null);
+
+  const [historicalLoading, setHistoricalLoading] =
+    useState(false);
+
+  const [historicalError, setHistoricalError] =
+    useState<string | null>(null);
+
+
+  // =====================================
   // CALIBRATION STATE
   // =====================================
 
@@ -242,6 +265,142 @@ export default function App() {
    */
   const previousCorrectionFeedbackTimestamp =
     useRef<number | null>(null);
+
+  const analyticsMounted =
+    useRef(true);
+
+  const historicalLoadingRef =
+    useRef(false);
+
+  const historicalRefreshPendingRef =
+    useRef(false);
+
+
+  // =====================================
+  // HISTORICAL ANALYTICS
+  // =====================================
+
+  const loadHistoricalAnalytics = async () => {
+
+    if (!analyticsMounted.current) {
+
+      return;
+    }
+
+
+    if (historicalLoadingRef.current) {
+
+      historicalRefreshPendingRef.current =
+        true;
+
+      return;
+    }
+
+
+    historicalLoadingRef.current =
+      true;
+
+    setHistoricalLoading(
+      true
+    );
+
+    setHistoricalError(
+      null
+    );
+
+
+    try {
+
+      const [summary, trends] =
+        await Promise.all([
+          fetchHistoricalSummary(),
+          fetchHistoricalTrends(),
+        ]);
+
+
+      if (!analyticsMounted.current) {
+        return;
+      }
+
+
+      setHistoricalSummary(
+        summary
+      );
+
+      setHistoricalTrends(
+        trends
+      );
+
+    } catch (error) {
+
+      console.error(
+        'Historical analytics loading failed:',
+        error
+      );
+
+
+      if (analyticsMounted.current) {
+
+        setHistoricalError(
+          'Unable to load historical analytics.'
+        );
+
+      }
+
+    } finally {
+
+      historicalLoadingRef.current =
+        false;
+
+
+      if (!analyticsMounted.current) {
+
+        historicalRefreshPendingRef.current =
+          false;
+
+        return;
+      }
+
+
+      if (historicalRefreshPendingRef.current) {
+
+        historicalRefreshPendingRef.current =
+          false;
+
+        void loadHistoricalAnalytics();
+
+        return;
+      }
+
+
+      setHistoricalLoading(
+        false
+      );
+
+
+    }
+  };
+
+
+  useEffect(() => {
+
+    analyticsMounted.current =
+      true;
+
+    void loadHistoricalAnalytics();
+
+
+    return () => {
+
+      analyticsMounted.current =
+        false;
+
+      historicalRefreshPendingRef.current =
+        false;
+
+    };
+
+  }, []);
 
 
   // =====================================
@@ -1154,11 +1313,13 @@ export default function App() {
       completedSession,
       metrics
     )
-      .then(() => {
+      .then(async () => {
 
         console.log(
           'Session successfully saved to backend'
         );
+
+        await loadHistoricalAnalytics();
 
       })
       .catch((error) => {
@@ -2052,6 +2213,297 @@ export default function App() {
 
 
       {/* =================================
+          HISTORICAL ANALYTICS
+      ================================= */}
+
+      {
+        !isCalibrating &&
+        !monitoringActive.current && (
+
+          <View style={styles.card}>
+
+            <Text style={styles.heading}>
+              Historical Analytics
+            </Text>
+
+
+            {
+              historicalLoading &&
+              historicalSummary === null &&
+              historicalTrends === null && (
+
+                <Text style={styles.instruction}>
+                  Loading historical analytics...
+                </Text>
+
+              )
+            }
+
+
+            {
+              historicalError !== null && (
+
+                <Text style={styles.warning}>
+                  {historicalError}
+                </Text>
+
+              )
+            }
+
+
+            {
+              historicalSummary !== null &&
+              historicalSummary.totalSessions === 0 && (
+
+                <Text style={styles.instruction}>
+                  No historical sessions available.
+                </Text>
+
+              )
+            }
+
+
+            {
+              historicalSummary !== null &&
+              historicalSummary.totalSessions > 0 && (
+
+                <>
+
+                  <Text style={styles.result}>
+                    Total Sessions:{' '}
+                    {historicalSummary.totalSessions}
+                  </Text>
+
+
+                  <Text style={styles.result}>
+                    Sessions Included in Analytics:{' '}
+                    {historicalSummary.includedSessions}
+                  </Text>
+
+
+                  <Text style={styles.result}>
+                    Sessions Excluded:{' '}
+                    {historicalSummary.excludedSessions}
+                  </Text>
+
+
+                  <Text style={styles.result}>
+                    Total Monitored Duration:{' '}
+                    {
+                      (
+                        historicalSummary
+                          .totalMonitoredDuration /
+                        1000
+                      ).toFixed(1)
+                    }
+                    {' sec'}
+                  </Text>
+
+
+                  <Text style={styles.result}>
+                    Average Consistency:{' '}
+                    {
+                      historicalSummary
+                        .averageConsistency === null
+                        ? 'N/A'
+                        : historicalSummary
+                          .averageConsistency
+                          .toFixed(1) + '%'
+                    }
+                  </Text>
+
+
+                  <Text style={styles.result}>
+                    Average Correction Time:{' '}
+                    {
+                      historicalSummary
+                        .averageCorrectionTime === null
+                        ? 'N/A'
+                        : historicalSummary
+                          .averageCorrectionTime
+                          .toFixed(2) + ' sec'
+                    }
+                  </Text>
+
+
+                  <Text style={styles.result}>
+                    Total Feedback Events:{' '}
+                    {historicalSummary.totalFeedbackEvents}
+                  </Text>
+
+
+                  <Text style={styles.result}>
+                    Total Completed Corrections:{' '}
+                    {historicalSummary.totalCompletedCorrections}
+                  </Text>
+
+
+                  <Text style={styles.result}>
+                    Overall Completion Rate:{' '}
+                    {
+                      historicalSummary
+                        .overallCompletionRate
+                        .toFixed(1)
+                    }
+                    %
+                  </Text>
+
+
+                  <Text style={styles.result}>
+                    Average Sampling Rate:{' '}
+                    {
+                      historicalSummary
+                        .averageSamplingRate === null
+                        ? 'N/A'
+                        : historicalSummary
+                          .averageSamplingRate
+                          .toFixed(1) + ' Hz'
+                    }
+                  </Text>
+
+
+                  <Text style={styles.heading}>
+                    Historical Sessions
+                  </Text>
+
+
+                  {
+                    historicalTrends !== null &&
+                    historicalTrends.sessions.length === 0 && (
+
+                      <Text style={styles.instruction}>
+                        No historical sessions available.
+                      </Text>
+
+                    )
+                  }
+
+
+                  {
+                    historicalTrends?.sessions.map(
+                      (historicalSession) => (
+
+                        <View
+                          key={historicalSession.id}
+                          style={styles.historicalSession}
+                        >
+
+                          <Text style={styles.resultTitle}>
+                            {
+                              new Date(
+                                historicalSession.startTime
+                              ).toLocaleString()
+                            }
+                          </Text>
+
+
+                          <Text style={styles.result}>
+                            Monitored Duration:{' '}
+                            {
+                              (
+                                historicalSession
+                                  .monitoredDuration /
+                                1000
+                              ).toFixed(1)
+                            }
+                            {' sec'}
+                          </Text>
+
+
+                          <Text style={styles.result}>
+                            Consistency:{' '}
+                            {
+                              historicalSession
+                                .consistency
+                                .toFixed(1)
+                            }
+                            %
+                          </Text>
+
+
+                          <Text style={styles.result}>
+                            Average Correction Time:{' '}
+                            {
+                              historicalSession
+                                .averageCorrectionTime === null
+                                ? 'N/A'
+                                : historicalSession
+                                  .averageCorrectionTime
+                                  .toFixed(2) + ' sec'
+                            }
+                          </Text>
+
+
+                          <Text style={styles.result}>
+                            Feedback Events:{' '}
+                            {historicalSession.feedbackEvents}
+                          </Text>
+
+
+                          <Text style={styles.result}>
+                            Completed Corrections:{' '}
+                            {historicalSession.completedCorrections}
+                          </Text>
+
+
+                          <Text style={styles.result}>
+                            Completion Rate:{' '}
+                            {
+                              historicalSession
+                                .completionRate
+                                .toFixed(1)
+                            }
+                            %
+                          </Text>
+
+
+                          <Text style={styles.result}>
+                            Sampling Rate:{' '}
+                            {
+                              historicalSession
+                                .actualSamplingRate
+                                .toFixed(1)
+                            }
+                            {' Hz'}
+                          </Text>
+
+                        </View>
+
+                      )
+                    )
+                  }
+
+                </>
+
+              )
+            }
+
+
+            <Pressable
+              style={styles.button}
+              onPress={() => {
+                void loadHistoricalAnalytics();
+              }}
+              disabled={historicalLoading}
+            >
+
+              <Text style={styles.buttonText}>
+                {
+                  historicalLoading
+                    ? 'Refreshing...'
+                    : 'Refresh Analytics'
+                }
+              </Text>
+
+            </Pressable>
+
+          </View>
+
+        )
+      }
+
+
+      {/* =================================
           CALIBRATION
       ================================= */}
 
@@ -2523,6 +2975,14 @@ const styles = StyleSheet.create({
   result: {
     fontSize: 16,
     marginVertical: 3,
+  },
+
+
+  historicalSession: {
+    borderTopWidth: 1,
+    borderTopColor: '#ddd',
+    paddingTop: 12,
+    marginTop: 12,
   },
 
 
