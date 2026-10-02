@@ -878,6 +878,11 @@ export default function App() {
 
   const startCalibration = () => {
 
+    if (monitoringActive.current) {
+      return;
+    }
+
+
     /*
      * Any previous monitoring session
      * is no longer active.
@@ -2255,16 +2260,22 @@ export default function App() {
               }
 
 
-              <Pressable
-                style={styles.button}
-                onPress={startCalibration}
-              >
+              {
+                !monitoringActive.current && (
 
-                <Text style={styles.buttonText}>
-                  Calibrate Again
-                </Text>
+                  <Pressable
+                    style={styles.button}
+                    onPress={startCalibration}
+                  >
 
-              </Pressable>
+                    <Text style={styles.buttonText}>
+                      Calibrate Again
+                    </Text>
+
+                  </Pressable>
+
+                )
+              }
 
             </>
 
