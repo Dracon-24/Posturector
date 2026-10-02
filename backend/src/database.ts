@@ -1,6 +1,13 @@
 import Database from 'better-sqlite3';
+import path from 'path';
 
-const db = new Database('posture.db');
+const databasePath = path.resolve(
+  __dirname,
+  '..',
+  'posture.db'
+);
+
+const db = new Database(databasePath);
 
 db.pragma('journal_mode = WAL');
 
