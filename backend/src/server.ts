@@ -4,7 +4,7 @@ import cors from 'cors';
 import './database';
 import sessionRoutes from './routes/sessions';
 
-const app = express();
+export const app = express();
 
 const PORT = 3000;
 
@@ -19,6 +19,12 @@ app.get('/', (_req, res) => {
 
 app.use('/api/sessions', sessionRoutes);
 
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`PJT-I backend running on port ${PORT}`);
-});
+export function startServer(port: number = PORT) {
+    return app.listen(port, '0.0.0.0', () => {
+        console.log(`PJT-I backend running on port ${port}`);
+    });
+}
+
+if (require.main === module) {
+    startServer();
+}
