@@ -553,6 +553,15 @@ finalization, metric calculation, and asynchronous upload lifecycle to
 run before recalibrating. Calibration is not adapted or restarted during
 an active session.
 
+Recalibration is also unavailable while a completed-session upload is in
+progress or after an upload has failed and is awaiting manual retry. The
+finalized session and its calculated metrics are retained in memory while
+the persistence outcome is unresolved, so starting a new calibration
+must not silently discard them. Recalibration becomes available after the
+upload reaches `saved` or `possibly-saved`. This protection is in-memory
+only and does not imply that pending data survives application
+termination.
+
 ------------------------------------------------------------------------
 
 # 16. PERSONALIZED DEVIATION DETECTION
@@ -1174,64 +1183,75 @@ When the user stops monitoring:
 3.  Correction observation is reset.
 4.  The current session is ended exactly once.
 5.  Final metrics are calculated.
-6.  The completed session is uploaded asynchronously.
-7.  Real-time detectors/controllers are reset.
+6.  The finalized session and metrics remain available in local state.
+7.  The completed session is uploaded asynchronously.
+8.  Real-time detectors/controllers are reset.
 
-The corrected implementation conceptually is:
+`stopMonitoring()` is guarded by `monitoringActive.current`. The first
+valid stop sets that ref to `false` synchronously, and the Stop Monitoring
+control is then hidden. Repeated presses therefore cannot finalize,
+calculate metrics for, or upload the same session twice.
 
-``` ts
-const currentSession = sessionRef.current;
+The upload lifecycle is outside the real-time IMU processing loop:
 
-if (
-  currentSession === null ||
-  currentSession.startTime === 0
-) {
-  return;
-}
-
-monitoringActive.current = false;
-
-hapticService.stop();
-
-correctionResponseDetector.reset();
-setCorrectionResponse(null);
-
-const completedSession =
-  endSession(currentSession, Date.now());
-
-sessionRef.current = completedSession;
-setSession(completedSession);
-
-const metrics =
-  calculatePerformanceMetrics(completedSession);
-
-setPerformanceMetrics(metrics);
-
-uploadSession(
-  completedSession,
-  metrics
-)
-  .then(() => {
-    console.log('Session successfully saved to backend');
-  })
-  .catch((error) => {
-    console.error('Session upload failed:', error);
-  });
-
-persistenceDetector.reset();
-setPersistence(null);
-
-stabilityDetector.reset();
-setStability(null);
-
-feedbackController.reset();
-setFeedback(null);
-
-previousCorrectionFeedbackTimestamp.current = null;
+``` text
+Finalize session
+→ calculate and display metrics
+→ retain finalized session and metrics
+→ upload asynchronously
+→ terminal persistence outcome
 ```
 
-The actual application may contain equivalent code with surrounding
-UI/state handling.
+Upload outcomes are:
+
+``` text
+2xx
+→ saved
+→ clear pending upload references
+→ request Historical Analytics refresh
+
+409 duplicate session ID
+→ possibly-saved
+→ the session may already exist on the backend
+→ clear pending upload references
+→ request Historical Analytics refresh
+
+ordinary failure
+→ failed
+→ retain the exact finalized session and metrics in memory
+→ expose Retry Upload
+→ do not refresh Historical Analytics
+
+timeout
+→ failed
+→ retain the exact finalized session and metrics in memory
+→ expose Retry Upload
+→ do not retry automatically
+```
+
+The upload-state model is:
+
+``` text
+idle
+uploading
+saved
+failed
+possibly-saved
+```
+
+`idle` means no completed-session upload is currently pending.
+`uploading` means a finalized session is currently being sent. `saved`
+means the backend confirmed successful persistence. `failed` means the
+upload failed or timed out, while the finalized session and metrics
+remain available for manual retry during the current application
+lifetime. `possibly-saved` means the backend returned HTTP `409`; it is a
+terminal persistence outcome because the ID already exists, but it is not
+described as confirmed persistence.
+
+Retry Upload reuses the exact finalized session, session ID, and metrics.
+It does not recalculate metrics, create another session, generate another
+ID, or retry automatically. A synchronous upload guard prevents
+overlapping requests, including rapid repeated Retry presses.
 
 ------------------------------------------------------------------------
 
@@ -1458,6 +1478,28 @@ services/apiService.ts
 
 The frontend uploads completed sessions asynchronously and retrieves
 historical analytics through the same service.
+
+Completed sessions are sent using `POST /api/sessions` with the existing
+session fields plus the calculated `metrics` object. Non-successful HTTP
+responses produce a typed `SessionUploadError` that preserves the HTTP
+status, allowing HTTP `409` to be distinguished from other failures.
+
+Session upload uses one 30-second `AbortController` timeout covering the
+complete operation:
+
+``` text
+fetch
+→ response body reading
+→ status interpretation
+→ JSON parsing
+→ completion
+```
+
+The timer is cleared in `finally` after the operation completes, including
+success, HTTP failure, network failure, body/JSON failure, or timeout.
+Timeout errors use `status: null`; HTTP failures retain their actual
+status. A timeout does not prove that the backend failed to receive or
+persist the request, which is why a later retry may receive HTTP `409`.
 
 The API base URL is supplied in the root-level, Git-ignored
 `.env.local` file:
@@ -1880,6 +1922,25 @@ even if the backend is temporarily unreachable.
 
 ------------------------------------------------------------------------
 
+## In-memory upload recovery only
+
+Manual Retry Upload is implemented, but failed or pending
+completed-session data is retained only in application memory. If the
+application is terminated before persistence succeeds or a retry
+completes, the pending upload data is not guaranteed to survive.
+
+The current implementation has:
+
+-   no durable offline upload queue
+-   no filesystem or SQLite pending-upload queue
+-   no AsyncStorage-based upload queue
+-   no background retry service
+
+Manual in-memory retry must therefore not be described as durable offline
+synchronization.
+
+------------------------------------------------------------------------
+
 ## Historical analytics frontend limitations
 
 The current frontend intentionally has:
@@ -1953,6 +2014,17 @@ Completed.
 ### Real session upload
 
 Verified.
+
+### Completed-session upload reliability
+
+Implemented with visible upload state, failed-upload recovery during the
+current application lifetime, manual same-session retry, HTTP `409`
+possibly-saved handling, a bounded 30-second upload timeout, concurrent
+upload prevention, recalibration protection while persistence is
+unresolved, duplicate Stop Monitoring protection, and Historical
+Analytics refresh after successful persistence or HTTP `409`.
+
+Durable offline synchronization is not implemented.
 
 ### Persistence hardening
 
@@ -2096,7 +2168,7 @@ The frontend provides:
 ``` text
 startup summary/trend loading
 manual refresh
-refresh after successful session upload
+refresh after successful session upload or HTTP 409
 loading and refreshing states
 error state
 empty state
@@ -2125,14 +2197,16 @@ Session completion
 → finalize session
 → calculate metrics
 → upload completed session
-→ upload succeeds
+→ upload succeeds or returns HTTP 409
 → refresh summary and trends
 ```
 
-Upload failure does not trigger the post-upload analytics refresh. An
-analytics failure preserves previously loaded data, displays an error,
-and does not affect calibration, monitoring, feedback, correction
-response, session finalization, or upload.
+Ordinary HTTP failure, network failure, timeout, and response parsing
+failure do not trigger the post-upload analytics refresh. An analytics
+failure preserves previously loaded data, displays an error, and does not
+affect calibration, monitoring, feedback, correction response, session
+finalization, or upload. Upload success remains a successful persistence
+outcome even if the subsequent analytics refresh fails.
 
 ### Request coordination
 
@@ -2467,6 +2541,12 @@ Backend regression tests
 Historical analytics backend
 Historical analytics frontend
 Analytics refresh race protection
+Visible completed-session upload status
+Manual in-memory Retry Upload
+Same-session upload retry identity
+HTTP 409 possibly-saved handling
+30-second completed-session upload timeout
+Upload concurrency and recalibration protection
 ```
 
 ### Not yet implemented / future
@@ -2478,7 +2558,10 @@ Final MPU6050 + ESP32 integration
 Physical vibration motor
 Cloud backend
 Authentication and multi-user accounts
-Offline upload queue/retry
+Durable offline upload queue
+Pending-upload persistence across application termination
+Background upload and retry
+Broader offline synchronization
 Advanced historical deviation analytics
 Large-scale historical rendering optimization
 Large-scale experimental evaluation
@@ -2532,8 +2615,15 @@ real-time feedback path.
 
 # 71. IMMEDIATE NEXT ACTION
 
-Historical analytics is complete at the current prototype scope. The
-next major planned phase is adaptive-feedback research and design.
+Completed-session upload reliability is implemented, its read-only code
+audit passed, and this document is synchronized with the implementation.
+The implementation and documentation are ready for a final diff review
+and can then be committed together. They have not yet been committed as
+part of this checkpoint.
+
+After that checkpoint, the next major planned technical phase remains
+adaptive-feedback research and design. Historical analytics is complete
+at the current prototype scope.
 
 That work must remain separate from calibration baseline semantics and
 must not casually change the validated real-time thresholds, filtering,

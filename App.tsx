@@ -72,6 +72,7 @@ import {
   HistoricalTrends,
   fetchHistoricalSummary,
   fetchHistoricalTrends,
+  SessionUploadError,
   uploadSession,
 } from './services/apiService';
 
@@ -142,6 +143,13 @@ const initialData: IMUData = {
   },
 };
 
+type SessionUploadState =
+  | 'idle'
+  | 'uploading'
+  | 'saved'
+  | 'failed'
+  | 'possibly-saved';
+
 
 // =====================================
 // APP
@@ -184,6 +192,9 @@ export default function App() {
 
   const [performanceMetrics, setPerformanceMetrics] =
     useState<PerformanceMetrics | null>(null);
+
+  const [sessionUploadState, setSessionUploadState] =
+    useState<SessionUploadState>('idle');
 
 
   // =====================================
@@ -269,11 +280,23 @@ export default function App() {
   const analyticsMounted =
     useRef(true);
 
+  const appMountedRef =
+    useRef(true);
+
   const historicalLoadingRef =
     useRef(false);
 
   const historicalRefreshPendingRef =
     useRef(false);
+
+  const sessionUploadActiveRef =
+    useRef(false);
+
+  const pendingUploadSessionRef =
+    useRef<Session | null>(null);
+
+  const pendingUploadMetricsRef =
+    useRef<PerformanceMetrics | null>(null);
 
 
   // =====================================
@@ -387,6 +410,9 @@ export default function App() {
     analyticsMounted.current =
       true;
 
+    appMountedRef.current =
+      true;
+
     void loadHistoricalAnalytics();
 
 
@@ -395,12 +421,163 @@ export default function App() {
       analyticsMounted.current =
         false;
 
+      appMountedRef.current =
+        false;
+
       historicalRefreshPendingRef.current =
         false;
 
     };
 
   }, []);
+
+
+  // =====================================
+  // COMPLETED SESSION UPLOAD
+  // =====================================
+
+  const uploadCompletedSession = async (
+    completedSession: Session,
+    metrics: PerformanceMetrics
+  ) => {
+
+    if (sessionUploadActiveRef.current) {
+      return;
+    }
+
+
+    sessionUploadActiveRef.current =
+      true;
+
+    pendingUploadSessionRef.current =
+      completedSession;
+
+    pendingUploadMetricsRef.current =
+      metrics;
+
+    setSessionUploadState(
+      'uploading'
+    );
+
+
+    let shouldRefreshAnalytics =
+      false;
+
+
+    try {
+
+      await uploadSession(
+        completedSession,
+        metrics
+      );
+
+      if (appMountedRef.current) {
+
+        setSessionUploadState(
+          'saved'
+        );
+
+      }
+
+      pendingUploadSessionRef.current =
+        null;
+
+      pendingUploadMetricsRef.current =
+        null;
+
+      console.log(
+        'Session successfully saved to backend'
+      );
+
+      shouldRefreshAnalytics =
+        true;
+
+    } catch (error) {
+
+      if (
+        error instanceof SessionUploadError &&
+        error.status === 409
+      ) {
+
+        if (appMountedRef.current) {
+
+          setSessionUploadState(
+            'possibly-saved'
+          );
+
+        }
+
+        pendingUploadSessionRef.current =
+          null;
+
+        pendingUploadMetricsRef.current =
+          null;
+
+        console.warn(
+          'Session ID already exists on the backend'
+        );
+
+        shouldRefreshAnalytics =
+          true;
+
+      } else {
+
+        if (appMountedRef.current) {
+
+          setSessionUploadState(
+            'failed'
+          );
+
+        }
+
+        console.error(
+          'Session upload failed:',
+          error
+        );
+
+      }
+
+    } finally {
+
+      sessionUploadActiveRef.current =
+        false;
+
+    }
+
+
+    if (shouldRefreshAnalytics) {
+      await loadHistoricalAnalytics();
+    }
+  };
+
+
+  const retrySessionUpload = () => {
+
+    if (sessionUploadActiveRef.current) {
+      return;
+    }
+
+
+    const completedSession =
+      pendingUploadSessionRef.current;
+
+    const metrics =
+      pendingUploadMetricsRef.current;
+
+
+    if (
+      completedSession === null ||
+      metrics === null
+    ) {
+      return;
+    }
+
+
+    void uploadCompletedSession(
+      completedSession,
+      metrics
+    );
+  };
 
 
   // =====================================
@@ -1041,6 +1218,10 @@ export default function App() {
       return;
     }
 
+    if (pendingUploadSessionRef.current !== null) {
+      return;
+    }
+
 
     /*
      * Any previous monitoring session
@@ -1171,6 +1352,10 @@ export default function App() {
       null
     );
 
+    setSessionUploadState(
+      'idle'
+    );
+
 
     /*
      * Reset calibration start timestamp.
@@ -1198,6 +1383,10 @@ export default function App() {
   // =====================================
 
   const stopMonitoring = () => {
+
+    if (!monitoringActive.current) {
+      return;
+    }
 
     /*
      * Get the currently active session.
@@ -1309,27 +1498,10 @@ export default function App() {
      * affect the local monitoring result.
      */
 
-    uploadSession(
+    void uploadCompletedSession(
       completedSession,
       metrics
-    )
-      .then(async () => {
-
-        console.log(
-          'Session successfully saved to backend'
-        );
-
-        await loadHistoricalAnalytics();
-
-      })
-      .catch((error) => {
-
-        console.error(
-          'Session upload failed:',
-          error
-        );
-
-      });
+    );
 
 
     // ---------------------------------
@@ -1849,6 +2021,7 @@ export default function App() {
       ================================= */}
 
       {
+        monitoringActive.current &&
         calibrationResult !== null &&
         calibrationResult.valid &&
         session !== null &&
@@ -1902,6 +2075,71 @@ export default function App() {
             <Text style={styles.heading}>
               Performance Metrics
             </Text>
+
+
+            {
+              sessionUploadState === 'uploading' && (
+
+                <Text style={styles.result}>
+                  Upload Status: Uploading...
+                </Text>
+
+              )
+            }
+
+
+            {
+              sessionUploadState === 'saved' && (
+
+                <Text style={styles.goodStatus}>
+                  Upload Status: Saved
+                </Text>
+
+              )
+            }
+
+
+            {
+              sessionUploadState === 'possibly-saved' && (
+
+                <Text style={styles.warning}>
+                  Session may already be saved.
+                </Text>
+
+              )
+            }
+
+
+            {
+              sessionUploadState === 'failed' && (
+
+                <>
+
+                  <Text style={styles.warning}>
+                    Session upload failed.
+                  </Text>
+
+
+                  <Text style={styles.instruction}>
+                    Retry the upload before recalibrating.
+                  </Text>
+
+
+                  <Pressable
+                    style={styles.button}
+                    onPress={retrySessionUpload}
+                  >
+
+                    <Text style={styles.buttonText}>
+                      Retry Upload
+                    </Text>
+
+                  </Pressable>
+
+                </>
+
+              )
+            }
 
 
             <Text style={styles.result}>
@@ -2713,7 +2951,8 @@ export default function App() {
 
 
               {
-                !monitoringActive.current && (
+                !monitoringActive.current &&
+                pendingUploadSessionRef.current === null && (
 
                   <Pressable
                     style={styles.button}

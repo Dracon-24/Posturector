@@ -50,6 +50,18 @@ export interface HistoricalTrends {
     sessions: HistoricalSessionTrend[];
 }
 
+export class SessionUploadError extends Error {
+    constructor(
+        message: string,
+        readonly status: number | null
+    ) {
+        super(message);
+        this.name = 'SessionUploadError';
+    }
+}
+
+const SESSION_UPLOAD_TIMEOUT_MS = 30_000;
+
 const API_BASE_URL =
     process.env.EXPO_PUBLIC_API_BASE_URL;
 
@@ -68,24 +80,50 @@ export async function uploadSession(
         metrics,
     };
 
-    const response = await fetch(`${API_BASE_URL}/api/sessions`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(
+        () => controller.abort(),
+        SESSION_UPLOAD_TIMEOUT_MS
+    );
 
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(
-            `Failed to upload session: ${response.status} ${errorText}`
-        );
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/sessions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
+            signal: controller.signal,
+        });
+
+        const responseText = await response.text();
+
+        if (!response.ok) {
+            throw new SessionUploadError(
+                `Failed to upload session: ${response.status} ${responseText}`,
+                response.status
+            );
+        }
+
+        const result: unknown = JSON.parse(responseText);
+
+        console.log('Session uploaded:', result);
+    } catch (error) {
+        if (error instanceof SessionUploadError) {
+            throw error;
+        }
+
+        if (controller.signal.aborted) {
+            throw new SessionUploadError(
+                'Session upload timed out',
+                null
+            );
+        }
+
+        throw error;
+    } finally {
+        clearTimeout(timeout);
     }
-
-    const result = await response.json();
-
-    console.log('Session uploaded:', result);
 }
 
 export async function fetchHistoricalSummary(): Promise<HistoricalSummary> {
