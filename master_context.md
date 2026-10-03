@@ -146,7 +146,9 @@ posture-belt/
 │   └── stability.ts
 ├── test/
 │   ├── adaptiveFeedback.test.mjs
+│   ├── adaptiveFullIntegration.test.mjs
 │   ├── adaptiveSystemEvaluation.test.mjs
+│   ├── adaptiveThresholdLongSession.test.mjs
 │   ├── adaptiveThreshold.test.mjs
 │   └── loadTypeScriptModule.mjs
 │
@@ -2619,6 +2621,44 @@ clinical/medical claims
 The current project is an engineering/research prototype, not a
 clinically validated medical device.
 
+## Real-device validation instrumentation
+
+Development builds emit a compact runtime snapshot tagged:
+
+``` text
+[PJT-I device validation]
+```
+
+The snapshot is emitted at most once every five seconds while monitoring
+is active. It reports only values already produced by the runtime path:
+
+``` text
+timestamp and live observed sampling rate
+body pitch and roll
+pitch/roll deviation and effective threshold
+stability and persistence duration
+feedback-active state
+correction state and current/final response time
+correction timestamps, deviation values, and direction
+pitch/roll adaptive evidence and evidence EMA
+canonical threshold, effective adaptive threshold, and adjustment
+adaptive-feedback mode
+```
+
+This diagnostic is guarded by Expo/React Native's `__DEV__` flag and is
+not rendered as permanent production UI. The five-second throttle keeps
+logging outside the approximately 50 Hz sensor-processing path. Its
+session-local timer resets at successful calibration, monitoring stop,
+recalibration, and component cleanup.
+
+The existing UI already displays live raw accelerometer/gyroscope data,
+body pitch/roll, personalized deviations and thresholds, stability,
+persistence, feedback, correction state, completed-session metrics, and
+the final measured sampling rate. Physical-device observations still
+require a connected device and controlled human validation; automated
+tests do not establish real-world orientation, mounting, comfort, or
+haptic perception.
+
 ------------------------------------------------------------------------
 
 # 64. RESEARCH CONTRIBUTION
@@ -2917,9 +2957,14 @@ real-time feedback path.
 
 # 71. IMMEDIATE NEXT ACTION
 
-Adaptive Feedback Phase 2 is implemented and ready for focused review.
-Future hardware work may evaluate amplitude or motor-driving strategies;
-vibration amplitude/intensity adaptation is not implemented.
+Run the documented real-device validation protocol using a connected
+Android device and the development diagnostic snapshots. Record actual
+sampling rate, mounting-direction observations, calibration behavior,
+noise/stability behavior, correction timing, adaptive state, haptic
+termination, session finalization, and asynchronous upload results before
+considering any parameter tuning. Future physical-belt work may evaluate
+amplitude or motor-driving strategies; vibration amplitude/intensity
+adaptation is not implemented.
 
 ------------------------------------------------------------------------
 

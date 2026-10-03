@@ -143,6 +143,10 @@ const CALIBRATION_DURATION = 30;
 const MINIMUM_THRESHOLD = 4;
 const VARIABILITY_FACTOR = 2;
 
+// Development-only real-device validation output is intentionally
+// throttled so sensor logging cannot approach the ~50 Hz processing rate.
+const DEVICE_DIAGNOSTIC_INTERVAL = 5_000;
+
 
 // =====================================
 // INITIAL SENSOR DATA
@@ -296,6 +300,9 @@ export default function App() {
    * response is recorded only once.
    */
   const previousCorrectionFeedbackTimestamp =
+    useRef<number | null>(null);
+
+  const lastDeviceDiagnosticTimestamp =
     useRef<number | null>(null);
 
   const analyticsMounted =
@@ -821,6 +828,9 @@ export default function App() {
             monitoringActive.current =
               true;
 
+            lastDeviceDiagnosticTimestamp.current =
+              null;
+
             setPerformanceMetrics(
               null
             );
@@ -1247,6 +1257,114 @@ export default function App() {
 
         }
 
+
+        // =================================
+        // DEVELOPMENT DEVICE DIAGNOSTICS
+        // =================================
+
+        if (
+          __DEV__ &&
+          (
+            lastDeviceDiagnosticTimestamp.current === null ||
+            data.timestamp - lastDeviceDiagnosticTimestamp.current >=
+              DEVICE_DIAGNOSTIC_INTERVAL
+          )
+        ) {
+
+          const activeSession =
+            sessionRef.current;
+
+          const elapsedMonitoringSeconds =
+            activeSession !== null &&
+            activeSession.startTime > 0
+              ? (
+                data.timestamp -
+                activeSession.startTime
+              ) / 1000
+              : 0;
+
+          const liveSamplingRate =
+            activeSession !== null &&
+            elapsedMonitoringSeconds > 0
+              ? activeSession.sampleCount /
+                elapsedMonitoringSeconds
+              : 0;
+
+          const adaptiveDiagnostics =
+            adaptiveThresholdController.getDiagnostics();
+
+          console.log(
+            '[PJT-I device validation]',
+            {
+              timestamp: data.timestamp,
+              samplingRate: liveSamplingRate,
+              pitch: bodyPitch,
+              roll: bodyRoll,
+              pitchDeviation: result.pitchDeviation,
+              rollDeviation: result.rollDeviation,
+              pitchThreshold: result.pitchThreshold,
+              rollThreshold: result.rollThreshold,
+              stable: stabilityResult.stable,
+              persistenceDuration:
+                persistenceResult.elapsedOutside,
+              feedbackActive:
+                feedbackResult.shouldVibrate,
+              correctionState:
+                correctionResult.status,
+              correctionResponseTime:
+                correctionResult.status === 'CORRECTED'
+                  ? correctionResult.responseTime
+                  : correctionResult.elapsedTime,
+              correctionDetails: {
+                feedbackTimestamp:
+                  correctionResult.feedbackTimestamp,
+                correctionTimestamp:
+                  correctionResult.status === 'CORRECTED'
+                    ? data.timestamp
+                    : null,
+                initialDeviation:
+                  correctionResult.initialDeviation,
+                finalDeviation:
+                  correctionResult.currentDeviation,
+                direction:
+                  correctionResult.direction,
+              },
+              adaptiveEvidence: {
+                pitch:
+                  adaptiveDiagnostics.pitch.combinedEvidence,
+                roll:
+                  adaptiveDiagnostics.roll.combinedEvidence,
+              },
+              adaptiveEMA: {
+                pitch:
+                  adaptiveDiagnostics.pitch.evidenceEma,
+                roll:
+                  adaptiveDiagnostics.roll.evidenceEma,
+              },
+              adaptiveThreshold: {
+                pitch: result.pitchThreshold,
+                roll: result.rollThreshold,
+              },
+              canonicalThreshold: {
+                pitch:
+                  MINIMUM_THRESHOLD +
+                  VARIABILITY_FACTOR * currentCalibration.pitchStd,
+                roll:
+                  MINIMUM_THRESHOLD +
+                  VARIABILITY_FACTOR * currentCalibration.rollStd,
+              },
+              adaptiveAdjustment:
+                adaptiveThresholdState,
+              adaptiveFeedbackMode:
+                adaptiveFeedbackController.getState().mode,
+            }
+          );
+
+          lastDeviceDiagnosticTimestamp.current =
+            data.timestamp;
+
+        }
+
       }
 
 
@@ -1277,6 +1395,9 @@ export default function App() {
       adaptiveFeedbackController.reset();
 
       lastTimestamp.current =
+        null;
+
+      lastDeviceDiagnosticTimestamp.current =
         null;
 
     };
@@ -1409,6 +1530,9 @@ export default function App() {
     // ---------------------------------
 
     previousCorrectionFeedbackTimestamp.current =
+      null;
+
+    lastDeviceDiagnosticTimestamp.current =
       null;
 
 
@@ -1620,6 +1744,9 @@ export default function App() {
 
 
     previousCorrectionFeedbackTimestamp.current =
+      null;
+
+    lastDeviceDiagnosticTimestamp.current =
       null;
 
   };

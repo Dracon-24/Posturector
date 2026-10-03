@@ -445,4 +445,12 @@ test('recalibration guard and reset path preserve lifecycle safety without chang
   assert.match(appSource, /adaptiveFeedbackController\.reset\(\)/);
   assert.match(appSource, /correctionResponseDetector\.reset\(\)/);
   assert.match(appSource, /feedbackReassertionController\.stop\(\)/);
+  assert.match(appSource, /const DEVICE_DIAGNOSTIC_INTERVAL = 5_000;/);
+  assert.match(appSource, /__DEV__ &&/);
+  assert.match(appSource, /\[PJT-I device validation\]/);
+  assert.match(appSource, /samplingRate: liveSamplingRate/);
+  assert.match(appSource, /correctionTimestamp:/);
+  assert.match(appSource, /adaptiveDiagnostics\.pitch\.evidenceEma/);
+  assert.match(appSource, /canonicalThreshold:/);
+  assert.match(appSource, /adaptiveFeedbackController\.getState\(\)\.mode/);
 });
