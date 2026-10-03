@@ -2292,7 +2292,7 @@ is cleared on component unmount.
 
 ------------------------------------------------------------------------
 
-# 60. ADAPTIVE FEEDBACK — PHASE 1
+# 60. ADAPTIVE FEEDBACK — PHASE 2
 
 File:
 
@@ -2338,19 +2338,48 @@ monitoring session starts, monitoring stops, recalibration starts, or
 the component is cleaned up. It is bounded in memory and is not added to
 the persisted session or backend schema.
 
-The current haptic service already repeats continuous vibration until
-the existing direction-specific correction condition is satisfied. That
-is the strongest persistence/continuity behavior currently supported,
-so all three Phase 1 modes retain that same authoritative haptic
-behavior. Phase 1 does not fabricate mode differences, change vibration
-amplitude or intensity, retrigger after correction, or bypass existing
-stop logic. Mode-specific haptic behavior remains a future phase.
+Phase 2 makes the modes behaviorally distinct through safe reassertion
+of the existing continuous-vibration command:
+
+``` text
+NORMAL
+→ start the existing continuous vibration once
+→ no reassertion timer
+
+PERSISTENT
+→ start the existing continuous vibration
+→ reassert the same command every 6 seconds while monitoring and
+  correction observation both remain active
+
+HIGH_PERSISTENCE
+→ start the existing continuous vibration
+→ reassert the same command every 3 seconds while monitoring and
+  correction observation both remain active
+```
+
+The 6-second and 3-second reassertion intervals reuse the existing slow-
+and fast-response boundaries. Reassertion does not trigger feedback by
+itself: the ordinary stability and persistence path must first produce a
+real feedback event. It improves command continuity if the platform
+interrupts a repeating vibration, but it does not change the correction
+condition or create another feedback event.
+
+Correction remains authoritative. Confirmed correction stops the timer
+and cancels vibration. Monitoring stop, recalibration, new-session start,
+and component cleanup also clear the timer. A timer callback verifies
+that monitoring and correction observation are still active before
+reasserting, so it cannot restart feedback after correction.
+
+All modes still use the haptic service's existing `[0, 200, 100]`
+repeating pattern. React Native exposes repeat-pattern timing but this
+implementation does not add amplitude control. Vibration amplitude and
+intensity are not adaptive.
 
 Slow response is interpreted only as recent correction-response
 behavior. The system does not detect or claim to detect physiological
 fatigue.
 
-The Phase 1 controller is deterministic and local to the active session.
+The Phase 2 controller is deterministic and local to the active session.
 Backend history remains outside the real-time feedback loop.
 
 Possible future adaptation dimensions, once supported by evidence and
@@ -2650,6 +2679,7 @@ Personalized calibration
 Personalized deviation thresholds
 Adaptive deviation thresholds
 Adaptive-feedback response-history mode controller
+Adaptive-feedback persistence reassertion
 Stability detection
 Persistence detection
 Haptic feedback
@@ -2675,7 +2705,6 @@ Upload concurrency and recalibration protection
 ### Not yet implemented / future
 
 ``` text
-Mode-specific adaptive haptic behavior
 Adaptive vibration amplitude or intensity
 ML-based posture classification
 Final MPU6050 + ESP32 integration
@@ -2737,10 +2766,11 @@ The session-local adaptive deviation threshold is operational. It does
 not modify the canonical calibration baseline and does not use backend
 analytics in the real-time path.
 
-Adaptive Feedback Phase 1 is operational as a bounded, session-local
-correction-response history and mode controller. The current haptic
-hardware path remains continuous-until-correction for every mode; its
-amplitude and intensity are not adaptive.
+Adaptive Feedback Phase 2 is operational as a bounded, session-local
+correction-response history and mode controller with mode-specific
+continuous-vibration command reassertion. Correction and lifecycle stop
+paths remain authoritative. Vibration amplitude and intensity are not
+adaptive.
 
 The session persistence pipeline is operational.
 
@@ -2752,10 +2782,9 @@ real-time feedback path.
 
 # 71. IMMEDIATE NEXT ACTION
 
-Adaptive Feedback Phase 1 is implemented and ready for focused review.
-The next adaptive phase may define meaningful mode-specific haptic
-behavior on supported hardware. Vibration amplitude/intensity adaptation
-is not implemented.
+Adaptive Feedback Phase 2 is implemented and ready for focused review.
+Future hardware work may evaluate amplitude or motor-driving strategies;
+vibration amplitude/intensity adaptation is not implemented.
 
 ------------------------------------------------------------------------
 

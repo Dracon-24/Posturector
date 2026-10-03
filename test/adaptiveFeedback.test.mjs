@@ -4,6 +4,8 @@ import test from 'node:test';
 import {
   AdaptiveFeedbackController,
   classifyResponseTime,
+  FeedbackReassertionController,
+  getAdaptiveFeedbackBehavior,
 } from '../processing/adaptiveFeedback.ts';
 import { AdaptiveThresholdController } from '../processing/adaptiveThreshold.ts';
 import { CorrectionResponseDetector } from '../processing/correctionResponse.ts';
@@ -104,4 +106,89 @@ test('existing correction-response completion behavior remains unchanged', () =>
   assert.equal(corrected.status, 'CORRECTED');
   assert.equal(corrected.responseTime, 3);
   assert.equal(corrected.direction, 'forward');
+});
+
+test('NORMAL preserves existing feedback behavior without reassertion', () => {
+  assert.deepEqual(getAdaptiveFeedbackBehavior(true, 'NORMAL'), {
+    shouldVibrate: true,
+    reassertInterval: null,
+  });
+});
+
+test('PERSISTENT reasserts confirmed feedback every six seconds', () => {
+  assert.equal(
+    getAdaptiveFeedbackBehavior(true, 'PERSISTENT').reassertInterval,
+    6_000
+  );
+});
+
+test('HIGH_PERSISTENCE uses the strongest three-second reassertion', () => {
+  assert.equal(
+    getAdaptiveFeedbackBehavior(true, 'HIGH_PERSISTENCE').reassertInterval,
+    3_000
+  );
+});
+
+test('adaptive mode alone cannot trigger feedback', () => {
+  const result = getAdaptiveFeedbackBehavior(false, 'HIGH_PERSISTENCE');
+  assert.equal(result.shouldVibrate, false);
+  assert.equal(result.reassertInterval, null);
+});
+
+test('adaptive mode cannot bypass stability or persistence eligibility', () => {
+  assert.deepEqual(getAdaptiveFeedbackBehavior(false, 'PERSISTENT'), {
+    shouldVibrate: false,
+    reassertInterval: null,
+  });
+});
+
+test('monitoring stop or component cleanup releases reassertion resources', () => {
+  let callback = null;
+  let cleared = false;
+  const reassertion = new FeedbackReassertionController(
+    (nextCallback) => {
+      callback = nextCallback;
+      return 1;
+    },
+    () => {
+      cleared = true;
+    }
+  );
+
+  reassertion.start(3_000, () => true, () => {});
+  assert.equal(reassertion.getIsActive(), true);
+  assert.equal(typeof callback, 'function');
+
+  reassertion.stop();
+  assert.equal(cleared, true);
+  assert.equal(reassertion.getIsActive(), false);
+});
+
+test('reassertion stops itself after correction instead of restarting feedback', () => {
+  let callback = null;
+  let reassertions = 0;
+  let corrected = false;
+  const reassertion = new FeedbackReassertionController(
+    (nextCallback) => {
+      callback = nextCallback;
+      return 1;
+    },
+    () => {}
+  );
+
+  reassertion.start(
+    3_000,
+    () => !corrected,
+    () => {
+      reassertions += 1;
+    }
+  );
+
+  callback();
+  assert.equal(reassertions, 1);
+
+  corrected = true;
+  callback();
+  assert.equal(reassertions, 1);
+  assert.equal(reassertion.getIsActive(), false);
 });

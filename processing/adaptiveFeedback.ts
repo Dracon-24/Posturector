@@ -1,6 +1,10 @@
 export const FAST_RESPONSE_THRESHOLD = 3;
 export const SLOW_RESPONSE_THRESHOLD = 6;
 export const MAX_RECENT_RESPONSES = 5;
+export const PERSISTENT_REASSERT_INTERVAL =
+    SLOW_RESPONSE_THRESHOLD * 1000;
+export const HIGH_PERSISTENCE_REASSERT_INTERVAL =
+    FAST_RESPONSE_THRESHOLD * 1000;
 
 export type ResponseTimeClassification =
     | 'FAST'
@@ -15,6 +19,105 @@ export type AdaptiveFeedbackMode =
 export interface AdaptiveFeedbackState {
     mode: AdaptiveFeedbackMode;
     recentResponseTimes: number[];
+}
+
+export interface AdaptiveFeedbackBehavior {
+    shouldVibrate: boolean;
+    reassertInterval: number | null;
+}
+
+export function getFeedbackReassertInterval(
+    mode: AdaptiveFeedbackMode
+): number | null {
+    if (mode === 'PERSISTENT') {
+        return PERSISTENT_REASSERT_INTERVAL;
+    }
+
+    if (mode === 'HIGH_PERSISTENCE') {
+        return HIGH_PERSISTENCE_REASSERT_INTERVAL;
+    }
+
+    return null;
+}
+
+export function getAdaptiveFeedbackBehavior(
+    sustainedDeviation: boolean,
+    mode: AdaptiveFeedbackMode
+): AdaptiveFeedbackBehavior {
+    if (!sustainedDeviation) {
+        return {
+            shouldVibrate: false,
+            reassertInterval: null,
+        };
+    }
+
+    return {
+        shouldVibrate: true,
+        reassertInterval:
+            getFeedbackReassertInterval(mode),
+    };
+}
+
+type TimerHandle = ReturnType<typeof setInterval>;
+
+type SetIntervalFunction = (
+    callback: () => void,
+    interval: number
+) => TimerHandle;
+
+type ClearIntervalFunction = (
+    timer: TimerHandle
+) => void;
+
+export class FeedbackReassertionController {
+    private timer: TimerHandle | null = null;
+    private setIntervalFunction: SetIntervalFunction;
+    private clearIntervalFunction: ClearIntervalFunction;
+
+    constructor(
+        setIntervalFunction: SetIntervalFunction = setInterval,
+        clearIntervalFunction: ClearIntervalFunction = clearInterval
+    ) {
+        this.setIntervalFunction = setIntervalFunction;
+        this.clearIntervalFunction = clearIntervalFunction;
+    }
+
+    start(
+        interval: number | null,
+        shouldContinue: () => boolean,
+        reassert: () => void
+    ): void {
+        this.stop();
+
+        if (interval === null) {
+            return;
+        }
+
+        this.timer = this.setIntervalFunction(
+            () => {
+                if (!shouldContinue()) {
+                    this.stop();
+                    return;
+                }
+
+                reassert();
+            },
+            interval
+        );
+    }
+
+    stop(): void {
+        if (this.timer === null) {
+            return;
+        }
+
+        this.clearIntervalFunction(this.timer);
+        this.timer = null;
+    }
+
+    getIsActive(): boolean {
+        return this.timer !== null;
+    }
 }
 
 export function classifyResponseTime(

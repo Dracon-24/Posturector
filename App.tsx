@@ -47,6 +47,10 @@ import {
 } from './processing/stability';
 
 import {
+  FeedbackReassertionController,
+} from './processing/adaptiveFeedback';
+
+import {
   FeedbackController,
   FeedbackState,
 } from './processing/feedback';
@@ -111,6 +115,9 @@ const feedbackController =
   new FeedbackController({
     vibrationDuration: 200,
   });
+
+const feedbackReassertionController =
+  new FeedbackReassertionController();
 
 const hapticService =
   new HapticService();
@@ -794,6 +801,8 @@ export default function App() {
 
             adaptiveFeedbackController.reset();
 
+            feedbackReassertionController.stop();
+
             const newSession =
               startSession(result);
 
@@ -1126,6 +1135,14 @@ export default function App() {
 
           hapticService.startContinuous();
 
+          feedbackReassertionController.start(
+            feedbackResult.reassertInterval,
+            () =>
+              monitoringActive.current &&
+              correctionResponseDetector.getIsObserving(),
+            () => hapticService.startContinuous()
+          );
+
         }
 
 
@@ -1219,6 +1236,8 @@ export default function App() {
           'CORRECTED'
         ) {
 
+          feedbackReassertionController.stop();
+
           hapticService.stop();
 
         }
@@ -1245,6 +1264,8 @@ export default function App() {
       imuService.stop();
 
       hapticService.stop();
+
+      feedbackReassertionController.stop();
 
       adaptiveThresholdController.reset();
 
@@ -1355,6 +1376,8 @@ export default function App() {
     // ---------------------------------
 
     feedbackController.reset();
+
+    feedbackReassertionController.stop();
 
     adaptiveThresholdController.reset();
 
@@ -1485,6 +1508,8 @@ export default function App() {
 
     hapticService.stop();
 
+    feedbackReassertionController.stop();
+
 
     /*
      * If a correction is currently being
@@ -1577,6 +1602,8 @@ export default function App() {
 
 
     feedbackController.reset();
+
+    feedbackReassertionController.stop();
 
     adaptiveThresholdController.reset();
 
