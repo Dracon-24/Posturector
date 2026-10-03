@@ -7,8 +7,12 @@ import {
   FeedbackReassertionController,
   getAdaptiveFeedbackBehavior,
 } from '../processing/adaptiveFeedback.ts';
-import { AdaptiveThresholdController } from '../processing/adaptiveThreshold.ts';
 import { CorrectionResponseDetector } from '../processing/correctionResponse.ts';
+import { loadAdaptiveThresholdModules } from './loadTypeScriptModule.mjs';
+
+const { controller: adaptiveThresholdModule } =
+  await loadAdaptiveThresholdModules();
+const { AdaptiveThresholdController } = adaptiveThresholdModule;
 
 function recordResponses(controller, responseTimes) {
   for (const responseTime of responseTimes) {

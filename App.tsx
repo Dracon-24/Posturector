@@ -1216,6 +1216,11 @@ export default function App() {
             correctionResult.responseTime
           );
 
+          adaptiveThresholdController.recordCompletedCorrection(
+            correctionResult.responseTime,
+            data.timestamp
+          );
+
 
           /*
            * Prevent duplicate recording.

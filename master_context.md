@@ -81,6 +81,8 @@ Sensor-to-Body Mapping
     ↓
 Personalized Calibration
     ↓
+Adaptive Deviation Threshold
+    ↓
 Personalized Deviation Detection
     ↓
 Stability Detection
@@ -88,6 +90,8 @@ Stability Detection
 Persistence Detection
     ↓
 Feedback Controller
+    ↓
+Adaptive Feedback Persistence
     ↓
 Haptic Feedback
     ↓
@@ -100,8 +104,6 @@ Session Persistence
 Backend / SQLite
     ↓
 Historical Analytics
-    ↓
-Adaptive Feedback
 ```
 
 The first part of this pipeline is real-time and local to the device.
@@ -133,6 +135,7 @@ posture-belt/
 │   ├── calibration.ts
 │   ├── adaptiveFeedback.ts
 │   ├── adaptiveThreshold.ts
+│   ├── adaptiveThresholdFeatures.ts
 │   ├── correctionResponse.ts
 │   ├── deviation.ts
 │   ├── feedback.ts
@@ -143,7 +146,9 @@ posture-belt/
 │   └── stability.ts
 ├── test/
 │   ├── adaptiveFeedback.test.mjs
-│   └── adaptiveThreshold.test.mjs
+│   ├── adaptiveSystemEvaluation.test.mjs
+│   ├── adaptiveThreshold.test.mjs
+│   └── loadTypeScriptModule.mjs
 │
 ├── services/
 │   ├── imuService.ts
@@ -628,44 +633,105 @@ Each monitoring session starts with both adjustments at `0°`. The state
 is local to that session, resets when monitoring ends, and is never
 carried into the next session or obtained from the backend.
 
-Current constants:
+Threshold adaptation now uses continuous timestamped behavioral evidence
+rather than completed five-minute decision windows:
 
 ``` text
-ADAPTATION_WINDOW = 5 minutes
-ADAPTATION_STEP = 0.5°
-MAX_ADAPTIVE_ADJUSTMENT = 3°
-MIN_ACCEPTABLE_RATIO = 70%
-MIN_STABLE_RATIO = 70%
-MAX_SEVERE_DEVIATION_RATIO = 20%
-MAX_ACCEPTABLE_RATIO_DROP = 10 percentage points
+Processed posture
+        ↓
+Behavioral feature extraction
+        ↓
+Feature normalization
+        ↓
+Equal-weight evidence
+        ↓
+Long-term EMA
+        ↓
+Safety gates
+        ↓
+Bounded threshold adjustment
 ```
 
-An axis adjustment increases by `0.5°` only when a completed five-minute
-window contains at least two finite processed samples spanning the full
-window and all criteria pass. At least 70% of samples must be acceptable,
-at least 70% must be stable, fewer than 20% may be severe, and the
-acceptable ratio must not have fallen by more than 10 percentage points
-from the preceding window. A failed criterion preserves the current
-adjustment; this first implementation never decreases it automatically.
-Each axis is evaluated independently, while stability continues to use
-the existing combined stability result.
+The five normalized `0–1` features are:
 
-Severe deviation is defined relative to the current effective adaptive
-threshold rather than a second absolute angle: an axis is severe when
-its absolute deviation is greater than twice its current threshold.
-Window timing uses observed timestamps and does not assume exactly 50 Hz.
-An adjustment selected at the end of a window applies from the next
-processed sample.
+``` text
+deviation trend
+→ short-term normalized deviation increasing relative to its long-term EMA
+
+deviation frequency
+→ short-term outside-threshold frequency increasing relative to long-term
+
+correction-response trend
+→ completed correction response times increasing relative to long-term
+
+good-posture duration decline
+→ completed good-posture periods becoming shorter
+
+near-threshold exposure
+→ time near 75–100% of the applicable threshold increasing over time
+```
+
+One large deviation is not itself deviation-trend evidence, and merely
+being near the threshold is not classified as bad posture. Pitch and
+roll maintain separate posture-feature and evidence state. Completed
+correction-response trend is an explicitly shared session context, but
+it is only one contributor and cannot directly relax either threshold.
+
+Each normalized feature contributes equally:
+
+``` text
+evidence =
+    (deviationTrend
+     + deviationFrequency
+     + correctionTrend
+     + goodPostureDecline
+     + nearThresholdExposure) / 5
+```
+
+Equal weights are intentional. There is no defensible labeled dataset
+for physiological exhaustion and no validated reinforcement-learning
+reward function, so arbitrary unequal or learned-looking weights would
+be unjustified. The equal-weight function is isolated so a future model
+can replace it if suitable evidence becomes available. No machine
+learning or reinforcement learning is currently implemented.
+
+Feature trends use timestamp-aware two-minute short-term and ten-minute
+long-term EMAs. The combined score uses a separate ten-minute EMA, which
+persists continuously for the monitoring session rather than resetting
+at a fixed window boundary. EMA updates are bounded to `0–1` and depend
+on elapsed time rather than an assumed 50 Hz sample rate.
+
+Current safety and adjustment constants are:
+
+``` text
+minimum observation duration = 10 minutes
+minimum valid processed samples = 100
+minimum completed correction responses = 3
+minimum completed good-posture periods per axis = 2
+evidence activation threshold = 0.30
+maximum adaptive adjustment = +3°
+maximum adjustment rate = 0.25° per minute
+severe deviation = more than 2 × current effective threshold
+major deterioration = both deviation-trend and frequency evidence ≥ 0.75
+```
+
+Insufficient data, existing stability failure, severe deviation, or
+major deterioration freezes threshold movement. High evidence cannot
+override these vetoes. When gates pass, the adjustment moves gradually
+toward the evidence-derived target. When evidence decreases, it can move
+back toward `0°`; the adaptive threshold never becomes a new baseline.
+Elapsed movement per sample is capped at one minute of adjustment so a
+large timestamp gap cannot cause an abrupt jump.
 
 The existing sample fields `pitchThreshold` and `rollThreshold` store the
 effective thresholds used for classification, so no session or backend
 schema expansion is required.
 
-This mechanism adapts deviation tolerance only. Correction response time
-is not an input. Feedback intensity, pattern, persistence, and correction
-semantics remain unchanged and belong to a future adaptive-feedback
-stage. The mechanism does not physiologically detect fatigue; it only
-evaluates deterministic ratios from processed posture samples.
+This mechanism adapts deviation tolerance only. It uses behavioral
+evidence consistent with prolonged-use difficulty and does not claim to
+detect physiological fatigue. Adaptive feedback remains a separate
+correction-response-based subsystem; its mode and reassertion behavior
+are not driven by the threshold evidence EMA.
 
 The current deviations are absolute differences from the personalized
 baseline.
@@ -2122,14 +2188,15 @@ coordination.
 The next development stages are:
 
 ``` text
-1. Adaptive Feedback research and design
+1. Adaptive-system experimental evaluation
 2. Final Hardware Integration
-3. Experimental Evaluation
+3. Hardware-specific haptic calibration
 4. Production-hardening work if required
 ```
 
-Historical analytics is implemented. Adaptive feedback remains future
-work and must not be described as implemented.
+Historical analytics, behavioral-EMA adaptive thresholds, and adaptive
+feedback persistence are implemented. Variable vibration intensity and
+physical-belt integration remain future work.
 
 ------------------------------------------------------------------------
 
