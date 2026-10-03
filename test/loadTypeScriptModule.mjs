@@ -48,3 +48,36 @@ export async function loadAdaptiveThresholdModules() {
     controller: await import(toDataUrl(controllerOutput)),
   };
 }
+
+export async function loadFeedbackModules() {
+  const adaptiveFeedbackSource = await readFile(
+    new URL('../processing/adaptiveFeedback.ts', import.meta.url),
+    'utf8'
+  );
+  const adaptiveFeedbackOutput = ts.transpileModule(adaptiveFeedbackSource, {
+    compilerOptions: {
+      module: ts.ModuleKind.ES2022,
+      target: ts.ScriptTarget.ES2022,
+    },
+  }).outputText;
+  const adaptiveFeedbackUrl = toDataUrl(adaptiveFeedbackOutput);
+
+  const feedbackSource = await readFile(
+    new URL('../processing/feedback.ts', import.meta.url),
+    'utf8'
+  );
+  const feedbackOutput = ts.transpileModule(feedbackSource, {
+    compilerOptions: {
+      module: ts.ModuleKind.ES2022,
+      target: ts.ScriptTarget.ES2022,
+    },
+  }).outputText.replace(
+    "'./adaptiveFeedback'",
+    `'${adaptiveFeedbackUrl}'`
+  );
+
+  return {
+    adaptiveFeedback: await import(adaptiveFeedbackUrl),
+    feedback: await import(toDataUrl(feedbackOutput)),
+  };
+}
