@@ -16,6 +16,8 @@ export interface DeviationResult {
 export interface DeviationConfig {
     minimumThreshold: number;
     variabilityFactor: number;
+    pitchThresholdAdjustment?: number;
+    rollThresholdAdjustment?: number;
 }
 
 export function calculatePersonalizedThreshold(
@@ -66,13 +68,13 @@ export function calculateDeviation(
         calculatePersonalizedThreshold(
             pitchStd,
             config
-        );
+        ) + (config.pitchThresholdAdjustment ?? 0);
 
     const rollThreshold =
         calculatePersonalizedThreshold(
             rollStd,
             config
-        );
+        ) + (config.rollThresholdAdjustment ?? 0);
 
 
     // -----------------------------------

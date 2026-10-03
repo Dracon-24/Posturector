@@ -599,6 +599,69 @@ rollThreshold =
     4° + 2 × rollStd
 ```
 
+These values are the immutable session's personalized base thresholds.
+The calibration baselines and variability values are never rewritten by
+threshold adaptation.
+
+## Adaptive deviation threshold
+
+File:
+
+``` text
+processing/adaptiveThreshold.ts
+```
+
+The implemented adaptive layer adds an axis-specific, non-negative
+adjustment to each personalized base threshold:
+
+``` text
+adaptivePitchThreshold = pitchBaseThreshold + pitchAdjustment
+adaptiveRollThreshold  = rollBaseThreshold + rollAdjustment
+```
+
+Each monitoring session starts with both adjustments at `0°`. The state
+is local to that session, resets when monitoring ends, and is never
+carried into the next session or obtained from the backend.
+
+Current constants:
+
+``` text
+ADAPTATION_WINDOW = 5 minutes
+ADAPTATION_STEP = 0.5°
+MAX_ADAPTIVE_ADJUSTMENT = 3°
+MIN_ACCEPTABLE_RATIO = 70%
+MIN_STABLE_RATIO = 70%
+MAX_SEVERE_DEVIATION_RATIO = 20%
+MAX_ACCEPTABLE_RATIO_DROP = 10 percentage points
+```
+
+An axis adjustment increases by `0.5°` only when a completed five-minute
+window contains at least two finite processed samples spanning the full
+window and all criteria pass. At least 70% of samples must be acceptable,
+at least 70% must be stable, fewer than 20% may be severe, and the
+acceptable ratio must not have fallen by more than 10 percentage points
+from the preceding window. A failed criterion preserves the current
+adjustment; this first implementation never decreases it automatically.
+Each axis is evaluated independently, while stability continues to use
+the existing combined stability result.
+
+Severe deviation is defined relative to the current effective adaptive
+threshold rather than a second absolute angle: an axis is severe when
+its absolute deviation is greater than twice its current threshold.
+Window timing uses observed timestamps and does not assume exactly 50 Hz.
+An adjustment selected at the end of a window applies from the next
+processed sample.
+
+The existing sample fields `pitchThreshold` and `rollThreshold` store the
+effective thresholds used for classification, so no session or backend
+schema expansion is required.
+
+This mechanism adapts deviation tolerance only. Correction response time
+is not an input. Feedback intensity, pattern, persistence, and correction
+semantics remain unchanged and belong to a future adaptive-feedback
+stage. The mechanism does not physiologically detect fatigue; it only
+evaluates deterministic ratios from processed posture samples.
+
 The current deviations are absolute differences from the personalized
 baseline.
 
@@ -2229,6 +2292,10 @@ is cleared on component unmount.
 Adaptive feedback is the project's longer-term algorithmic
 personalization component.
 
+Axis-specific adaptive deviation thresholds are now implemented as a
+separate tolerance mechanism. Adaptive haptic intensity, pattern, and
+persistence remain future work.
+
 The goal is to use historical user behavior to adjust feedback behavior
 without changing the core safety/processing structure arbitrarily.
 
@@ -2527,6 +2594,7 @@ Real-time posture monitoring
 Complementary filtering
 Personalized calibration
 Personalized deviation thresholds
+Adaptive deviation thresholds
 Stability detection
 Persistence detection
 Haptic feedback
@@ -2552,7 +2620,7 @@ Upload concurrency and recalibration protection
 ### Not yet implemented / future
 
 ``` text
-Adaptive feedback beyond current fixed behavior
+Adaptive haptic feedback beyond current fixed behavior
 ML-based posture classification
 Final MPU6050 + ESP32 integration
 Physical vibration motor
@@ -2594,16 +2662,22 @@ At the current stage:
         ↓                                  ↓
  Personalization                       Backend
         ↓                                  ↓
- Stability                            SQLite
+ Adaptive Thresholds                    SQLite
         ↓                                  ↓
- Persistence                  Historical Analytics
+ Stability                   Historical Analytics
         ↓                                  ↓
- Feedback                      Metrics API + UI
+ Persistence                  Metrics API + UI
+        ↓
+ Feedback
         ↓
  Correction
 ```
 
 The real-time processing pipeline is operational.
+
+The session-local adaptive deviation threshold is operational. It does
+not modify the canonical calibration baseline and does not use backend
+analytics in the real-time path.
 
 The session persistence pipeline is operational.
 
@@ -2615,21 +2689,11 @@ real-time feedback path.
 
 # 71. IMMEDIATE NEXT ACTION
 
-Completed-session upload reliability is implemented, its read-only code
-audit passed, and this document is synchronized with the implementation.
-The implementation and documentation are ready for a final diff review
-and can then be committed together. They have not yet been committed as
-part of this checkpoint.
-
-After that checkpoint, the next major planned technical phase remains
-adaptive-feedback research and design. Historical analytics is complete
-at the current prototype scope.
-
-That work must remain separate from calibration baseline semantics and
-must not casually change the validated real-time thresholds, filtering,
-stability, persistence, or continuous-feedback behavior. No adaptive
-feedback mechanism, machine learning model, or automatic parameter
-update is currently implemented.
+The first adaptive mechanism, session-local adaptive deviation
+thresholds, is implemented and ready for focused validation. The next
+adaptive phase is feedback research and design; no adaptive haptic
+intensity, pattern, persistence, or correction-response mechanism is
+currently implemented.
 
 ------------------------------------------------------------------------
 

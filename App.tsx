@@ -14,6 +14,10 @@ import {
 } from './processing/deviation';
 
 import {
+  AdaptiveThresholdController,
+} from './processing/adaptiveThreshold';
+
+import {
   IMUData,
   IMUService,
 } from './services/imuService';
@@ -109,6 +113,9 @@ const hapticService =
 
 const correctionResponseDetector =
   new CorrectionResponseDetector();
+
+const adaptiveThresholdController =
+  new AdaptiveThresholdController();
 
 
 // =====================================
@@ -776,6 +783,8 @@ export default function App() {
             result.valid
           ) {
 
+            adaptiveThresholdController.reset();
+
             const newSession =
               startSession(result);
 
@@ -856,6 +865,9 @@ export default function App() {
         currentCalibration.valid
       ) {
 
+        const adaptiveThresholdState =
+          adaptiveThresholdController.getState();
+
         const result =
           calculateDeviation(
 
@@ -883,6 +895,12 @@ export default function App() {
 
               variabilityFactor:
                 VARIABILITY_FACTOR,
+
+              pitchThresholdAdjustment:
+                adaptiveThresholdState.pitchAdjustment,
+
+              rollThresholdAdjustment:
+                adaptiveThresholdState.rollAdjustment,
             }
           );
 
@@ -907,6 +925,20 @@ export default function App() {
         setStability(
           stabilityResult
         );
+
+
+        // ---------------------------------
+        // Adaptive threshold window
+        // ---------------------------------
+
+        adaptiveThresholdController.update({
+          timestamp: data.timestamp,
+          pitchDeviation: result.pitchDeviation,
+          rollDeviation: result.rollDeviation,
+          pitchThreshold: result.pitchThreshold,
+          rollThreshold: result.rollThreshold,
+          stable: stabilityResult.stable,
+        });
 
 
         // ---------------------------------
@@ -1200,6 +1232,8 @@ export default function App() {
 
       hapticService.stop();
 
+      adaptiveThresholdController.reset();
+
       lastTimestamp.current =
         null;
 
@@ -1305,6 +1339,8 @@ export default function App() {
     // ---------------------------------
 
     feedbackController.reset();
+
+    adaptiveThresholdController.reset();
 
     setFeedback(
       null
@@ -1523,6 +1559,8 @@ export default function App() {
 
 
     feedbackController.reset();
+
+    adaptiveThresholdController.reset();
 
     setFeedback(
       null
