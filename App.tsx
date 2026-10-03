@@ -797,7 +797,7 @@ export default function App() {
 
 
           // ---------------------------------
-          // Create monitoring session
+          // Enter calibrated-idle state
           // ---------------------------------
 
           if (
@@ -810,23 +810,15 @@ export default function App() {
 
             feedbackReassertionController.stop();
 
-            const newSession =
-              startSession(result);
-
-            sessionRef.current =
-              newSession;
-
-            setSession(
-              newSession
-            );
-
             /*
-             * Monitoring begins after
-             * successful calibration.
+             * A valid calibration is retained,
+             * but monitoring begins only after
+             * the user explicitly starts a new
+             * session.
              */
 
             monitoringActive.current =
-              true;
+              false;
 
             lastDeviceDiagnosticTimestamp.current =
               null;
@@ -1585,6 +1577,103 @@ export default function App() {
 
 
   // =====================================
+  // START MONITORING
+  // =====================================
+
+  const startMonitoring = () => {
+
+    if (monitoringActive.current) {
+      return;
+    }
+
+    const currentCalibration =
+      calibrationResultRef.current;
+
+    if (
+      currentCalibration === null ||
+      !currentCalibration.valid
+    ) {
+      return;
+    }
+
+    /*
+     * Do not replace a finalized session while
+     * its persistence result is unresolved.
+     */
+    if (
+      sessionUploadActiveRef.current ||
+      pendingUploadSessionRef.current !== null
+    ) {
+      return;
+    }
+
+    hapticService.stop();
+
+    feedbackReassertionController.stop();
+
+    adaptiveThresholdController.reset();
+
+    adaptiveFeedbackController.reset();
+
+    correctionResponseDetector.reset();
+
+    persistenceDetector.reset();
+
+    stabilityDetector.reset();
+
+    feedbackController.reset();
+
+    previousCorrectionFeedbackTimestamp.current =
+      null;
+
+    lastDeviceDiagnosticTimestamp.current =
+      null;
+
+    setDeviation(
+      null
+    );
+
+    setStability(
+      null
+    );
+
+    setPersistence(
+      null
+    );
+
+    setFeedback(
+      null
+    );
+
+    setCorrectionResponse(
+      null
+    );
+
+    const newSession =
+      startSession(currentCalibration);
+
+    sessionRef.current =
+      newSession;
+
+    setSession(
+      newSession
+    );
+
+    setPerformanceMetrics(
+      null
+    );
+
+    setSessionUploadState(
+      'idle'
+    );
+
+    monitoringActive.current =
+      true;
+
+  };
+
+
+  // =====================================
   // STOP MONITORING
   // =====================================
 
@@ -1608,8 +1697,7 @@ export default function App() {
      */
 
     if (
-      currentSession === null ||
-      currentSession.startTime === 0
+      currentSession === null
     ) {
 
       return;
@@ -2242,7 +2330,7 @@ export default function App() {
         calibrationResult !== null &&
         calibrationResult.valid &&
         session !== null &&
-        session.startTime !== 0 && (
+        (
 
           <View style={styles.card}>
 
@@ -3162,6 +3250,36 @@ export default function App() {
                   <Text style={styles.warning}>
                     {calibrationResult.reason}
                   </Text>
+
+                )
+              }
+
+
+              {
+                calibrationResult.valid &&
+                !monitoringActive.current &&
+                pendingUploadSessionRef.current === null &&
+                !sessionUploadActiveRef.current && (
+
+                  <>
+
+                    <Text style={styles.goodStatus}>
+                      Calibration remains active.
+                    </Text>
+
+
+                    <Pressable
+                      style={styles.button}
+                      onPress={startMonitoring}
+                    >
+
+                      <Text style={styles.buttonText}>
+                        Start Monitoring
+                      </Text>
+
+                    </Pressable>
+
+                  </>
 
                 )
               }

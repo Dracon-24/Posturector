@@ -150,7 +150,8 @@ posture-belt/
 │   ├── adaptiveSystemEvaluation.test.mjs
 │   ├── adaptiveThresholdLongSession.test.mjs
 │   ├── adaptiveThreshold.test.mjs
-│   └── loadTypeScriptModule.mjs
+│   ├── loadTypeScriptModule.mjs
+│   └── monitoringLifecycle.test.mjs
 │
 ├── services/
 │   ├── imuService.ts
@@ -1286,15 +1287,22 @@ is disabled.
 
 When calibration succeeds:
 
-1.  A session is created.
-2.  `monitoringActive.current` becomes `true`.
-3.  Incoming IMU samples are processed.
-4.  Orientation is estimated.
-5.  Personalized deviation is evaluated.
-6.  Stability and persistence are evaluated.
-7.  Feedback is generated when required.
-8.  Correction responses are tracked.
-9.  Session samples/events are recorded.
+1.  The valid canonical calibration is retained.
+2.  The application enters a calibrated-idle state.
+3.  Monitoring remains inactive until the user presses Start Monitoring.
+
+Starting monitoring with a valid calibration:
+
+1.  Is blocked while a completed-session upload is active or unresolved.
+2.  Resets session-local adaptive, detector, correction, and haptic state.
+3.  Creates a new independent session using the retained calibration.
+4.  Sets `monitoringActive.current` to `true`.
+5.  Processes and records incoming posture samples.
+
+The same valid calibration can therefore be used for multiple explicitly
+started monitoring sessions. A new session does not reuse the preceding
+session's samples, feedback events, correction responses, adaptive
+threshold state, or adaptive-feedback history.
 
 The core processing condition is conceptually:
 
@@ -1322,6 +1330,12 @@ When the user stops monitoring:
 6.  The finalized session and metrics remain available in local state.
 7.  The completed session is uploaded asynchronously.
 8.  Real-time detectors/controllers are reset.
+9.  The valid canonical calibration remains available.
+
+After a terminal upload outcome clears the pending-session references,
+the application returns to calibrated idle and exposes Start Monitoring
+and Calibrate Again. An unresolved upload continues to block both actions
+so the finalized session cannot be silently replaced.
 
 `stopMonitoring()` is guarded by `monitoringActive.current`. The first
 valid stop sets that ref to `false` synchronously, and the Stop Monitoring
@@ -1421,7 +1435,7 @@ sensor data may exist, but posture/session processing is disabled
 This is acceptable for the current prototype.
 
 It also allows monitoring to be started again without reconstructing the
-entire sensor pipeline.
+entire sensor pipeline or repeating a still-valid calibration.
 
 ------------------------------------------------------------------------
 
