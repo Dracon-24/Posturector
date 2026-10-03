@@ -2449,6 +2449,74 @@ physical vibration motor.
 
 The existing processing architecture should be preserved where possible.
 
+## Hardware-level adaptive vibration intensity
+
+Variable vibration intensity is a future physical-belt requirement, not
+a capability of the current React Native phone-vibration prototype. The
+existing adaptive feedback controller must remain the decision layer
+during hardware migration. Its `NORMAL`, `PERSISTENT`, and
+`HIGH_PERSISTENCE` modes should eventually map to distinguishable
+physical haptic output levels while preserving the existing threshold,
+stability, persistence, and correction-response stages.
+
+The physical haptic path should be evaluated as:
+
+``` text
+MCU
+  ↓
+haptic driver / suitable motor driver
+  ↓
+vibration actuator
+```
+
+The actuator and driver must be selected together based on whether they
+support controllable drive amplitude. A suitable eccentric rotating mass
+(`ERM`) or linear resonant actuator (`LRA`) with an appropriate driver is
+a candidate implementation. The final choice depends on the MCU,
+actuator, driver, available power, wearable mounting, and measured belt
+behavior.
+
+Low, medium, and high physical intensity values must be experimentally
+calibrated on the completed belt. Those values must not be hardcoded in
+the phone prototype or specified before the actuator, driver, MCU, power
+requirements, and mounting arrangement have been selected and tested.
+
+The hardware implementation must retain the current safety rules:
+
+``` text
+confirmed correction → stop feedback
+monitoring stop      → stop feedback
+recalibration        → stop and reset feedback
+```
+
+Adaptive feedback must never continue indefinitely after confirmed
+correction. Hardware intensity control must not bypass the existing
+feedback eligibility, correction, or lifecycle stop logic.
+
+Current and future status must be represented explicitly:
+
+``` text
+CURRENT SOFTWARE PROTOTYPE
+Adaptive threshold                         IMPLEMENTED
+Adaptive feedback controller               IMPLEMENTED
+Adaptive feedback persistence/reassertion  IMPLEMENTED
+Variable vibration intensity               NOT IMPLEMENTED
+Physiological fatigue detection             NOT IMPLEMENTED
+
+FUTURE PHYSICAL BELT
+Adaptive threshold                         RETAIN
+Adaptive feedback controller               RETAIN
+Adaptive feedback persistence              RETAIN
+Variable haptic intensity                  IMPLEMENT
+Hardware-specific intensity calibration    REQUIRED
+```
+
+Therefore the current prototype must not be described as providing
+adaptive vibration amplitude or intensity. Its implemented adaptive
+feedback behavior is persistence/reassertion based on recent completed
+correction responses. This behavior does not constitute physiological
+fatigue detection.
+
 ------------------------------------------------------------------------
 
 # 63. EXPERIMENTAL EVALUATION --- FUTURE STAGE
