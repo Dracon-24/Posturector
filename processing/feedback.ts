@@ -1,3 +1,7 @@
+import {
+    AdaptiveFeedbackMode,
+} from './adaptiveFeedback';
+
 // =====================================
 // FEEDBACK CONTROLLER
 // =====================================
@@ -9,6 +13,7 @@ export interface FeedbackConfig {
 export interface FeedbackState {
     shouldVibrate: boolean;
     vibrationDuration: number;
+    adaptiveMode: AdaptiveFeedbackMode;
 }
 
 
@@ -29,7 +34,8 @@ export class FeedbackController {
 
     update(
         sustainedDeviation: boolean,
-        timestamp: number
+        timestamp: number,
+        adaptiveMode: AdaptiveFeedbackMode
     ): FeedbackState {
 
         // Timestamp is retained for
@@ -47,6 +53,7 @@ export class FeedbackController {
             return {
                 shouldVibrate: false,
                 vibrationDuration: 0,
+                adaptiveMode,
             };
 
         }
@@ -60,6 +67,7 @@ export class FeedbackController {
             shouldVibrate: true,
             vibrationDuration:
                 this.config.vibrationDuration,
+            adaptiveMode,
         };
     }
 

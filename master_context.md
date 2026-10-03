@@ -131,6 +131,8 @@ posture-belt/
 │
 ├── processing/
 │   ├── calibration.ts
+│   ├── adaptiveFeedback.ts
+│   ├── adaptiveThreshold.ts
 │   ├── correctionResponse.ts
 │   ├── deviation.ts
 │   ├── feedback.ts
@@ -139,6 +141,9 @@ posture-belt/
 │   ├── persistence.ts
 │   ├── sessionRecorder.ts
 │   └── stability.ts
+├── test/
+│   ├── adaptiveFeedback.test.mjs
+│   └── adaptiveThreshold.test.mjs
 │
 ├── services/
 │   ├── imuService.ts
@@ -2287,17 +2292,66 @@ is cleared on component unmount.
 
 ------------------------------------------------------------------------
 
-# 60. ADAPTIVE FEEDBACK --- FUTURE STAGE
+# 60. ADAPTIVE FEEDBACK — PHASE 1
 
-Adaptive feedback is the project's longer-term algorithmic
-personalization component.
+File:
+
+``` text
+processing/adaptiveFeedback.ts
+```
+
+Adaptive feedback Phase 1 uses only completed correction-response times
+from the current monitoring session. It does not use incomplete
+corrections, unmatched feedback events, calibration duration, raw sensor
+noise, backend analytics, or clock time by itself.
 
 Axis-specific adaptive deviation thresholds are now implemented as a
-separate tolerance mechanism. Adaptive haptic intensity, pattern, and
-persistence remain future work.
+separate tolerance mechanism that answers whether feedback should be
+triggered. Adaptive feedback observes how recent completed corrections
+behaved after feedback was triggered. It cannot modify calibration,
+thresholds, stability, persistence, or correction completion semantics.
 
-The goal is to use historical user behavior to adjust feedback behavior
-without changing the core safety/processing structure arbitrarily.
+The controller retains at most the five most recent completed response
+times. Individual response times are classified as:
+
+``` text
+responseTime < 3 seconds       → FAST
+3 seconds ≤ responseTime ≤ 6  → NORMAL
+responseTime > 6 seconds       → SLOW
+```
+
+The current mode is selected deterministically:
+
+``` text
+NORMAL
+→ fewer than 3 usable responses, or no consistent slow pattern
+
+PERSISTENT
+→ at least 3 usable responses and at least 2 of the latest 3 are slow
+
+HIGH_PERSISTENCE
+→ at least 5 usable responses and at least 4 of the latest 5 are slow
+```
+
+Mode state is exposed through the feedback layer. It resets when a new
+monitoring session starts, monitoring stops, recalibration starts, or
+the component is cleaned up. It is bounded in memory and is not added to
+the persisted session or backend schema.
+
+The current haptic service already repeats continuous vibration until
+the existing direction-specific correction condition is satisfied. That
+is the strongest persistence/continuity behavior currently supported,
+so all three Phase 1 modes retain that same authoritative haptic
+behavior. Phase 1 does not fabricate mode differences, change vibration
+amplitude or intensity, retrigger after correction, or bypass existing
+stop logic. Mode-specific haptic behavior remains a future phase.
+
+Slow response is interpreted only as recent correction-response
+behavior. The system does not detect or claim to detect physiological
+fatigue.
+
+The Phase 1 controller is deterministic and local to the active session.
+Backend history remains outside the real-time feedback loop.
 
 Possible future adaptation dimensions, once supported by evidence and
 implementation, include:
@@ -2595,6 +2649,7 @@ Complementary filtering
 Personalized calibration
 Personalized deviation thresholds
 Adaptive deviation thresholds
+Adaptive-feedback response-history mode controller
 Stability detection
 Persistence detection
 Haptic feedback
@@ -2620,7 +2675,8 @@ Upload concurrency and recalibration protection
 ### Not yet implemented / future
 
 ``` text
-Adaptive haptic feedback beyond current fixed behavior
+Mode-specific adaptive haptic behavior
+Adaptive vibration amplitude or intensity
 ML-based posture classification
 Final MPU6050 + ESP32 integration
 Physical vibration motor
@@ -2668,6 +2724,8 @@ At the current stage:
         ↓                                  ↓
  Persistence                  Metrics API + UI
         ↓
+ Adaptive Feedback Mode
+        ↓
  Feedback
         ↓
  Correction
@@ -2679,6 +2737,11 @@ The session-local adaptive deviation threshold is operational. It does
 not modify the canonical calibration baseline and does not use backend
 analytics in the real-time path.
 
+Adaptive Feedback Phase 1 is operational as a bounded, session-local
+correction-response history and mode controller. The current haptic
+hardware path remains continuous-until-correction for every mode; its
+amplitude and intensity are not adaptive.
+
 The session persistence pipeline is operational.
 
 The historical analytics backend and frontend are operational. They are
@@ -2689,11 +2752,10 @@ real-time feedback path.
 
 # 71. IMMEDIATE NEXT ACTION
 
-The first adaptive mechanism, session-local adaptive deviation
-thresholds, is implemented and ready for focused validation. The next
-adaptive phase is feedback research and design; no adaptive haptic
-intensity, pattern, persistence, or correction-response mechanism is
-currently implemented.
+Adaptive Feedback Phase 1 is implemented and ready for focused review.
+The next adaptive phase may define meaningful mode-specific haptic
+behavior on supported hardware. Vibration amplitude/intensity adaptation
+is not implemented.
 
 ------------------------------------------------------------------------
 

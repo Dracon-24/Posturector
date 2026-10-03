@@ -18,6 +18,10 @@ import {
 } from './processing/adaptiveThreshold';
 
 import {
+  AdaptiveFeedbackController,
+} from './processing/adaptiveFeedback';
+
+import {
   IMUData,
   IMUService,
 } from './services/imuService';
@@ -116,6 +120,9 @@ const correctionResponseDetector =
 
 const adaptiveThresholdController =
   new AdaptiveThresholdController();
+
+const adaptiveFeedbackController =
+  new AdaptiveFeedbackController();
 
 
 // =====================================
@@ -785,6 +792,8 @@ export default function App() {
 
             adaptiveThresholdController.reset();
 
+            adaptiveFeedbackController.reset();
+
             const newSession =
               startSession(result);
 
@@ -965,7 +974,8 @@ export default function App() {
         const feedbackResult =
           feedbackController.update(
             persistenceResult.isSustained,
-            data.timestamp
+            data.timestamp,
+            adaptiveFeedbackController.getState().mode
           );
 
 
@@ -1091,7 +1101,6 @@ export default function App() {
 
           }
 
-
           /*
            * Remember the feedback event
            * currently being observed.
@@ -1186,6 +1195,11 @@ export default function App() {
           }
 
 
+          adaptiveFeedbackController.recordCompletedResponse(
+            correctionResult.responseTime
+          );
+
+
           /*
            * Prevent duplicate recording.
            */
@@ -1233,6 +1247,8 @@ export default function App() {
       hapticService.stop();
 
       adaptiveThresholdController.reset();
+
+      adaptiveFeedbackController.reset();
 
       lastTimestamp.current =
         null;
@@ -1341,6 +1357,8 @@ export default function App() {
     feedbackController.reset();
 
     adaptiveThresholdController.reset();
+
+    adaptiveFeedbackController.reset();
 
     setFeedback(
       null
@@ -1561,6 +1579,8 @@ export default function App() {
     feedbackController.reset();
 
     adaptiveThresholdController.reset();
+
+    adaptiveFeedbackController.reset();
 
     setFeedback(
       null
