@@ -128,6 +128,9 @@ posture-belt/
 ├── AGENTS.md
 ├── master_context.md
 │
+├── components/
+│   └── SessionResultsDashboard.tsx
+│
 ├── models/
 │   └── postureModel.ts
 │
@@ -1876,6 +1879,7 @@ startup/manual/post-upload analytics loading
 coalesced trailing-refresh coordination
 finalized engineering monitoring dashboard
 throttled adaptive/runtime dashboard snapshot
+finalized completed-session performance dashboard
 ```
 
 It imports session upload and historical analytics functions/types from:
@@ -1938,6 +1942,47 @@ Dashboard-specific adaptive/runtime state is copied to React state at a
 maximum of five updates per second. The underlying sensor and processing
 pipeline continues at its existing cadence; the dashboard does not
 recalculate posture-processing results.
+
+## Finalized session performance and results dashboard
+
+`components/SessionResultsDashboard.tsx` renders only after monitoring
+has stopped, the session has been finalized, and the existing
+`PerformanceMetrics` snapshot has been calculated. It does not depend on
+backend availability and does not read live monitoring state as a
+substitute for completed-session data.
+
+The results dashboard presents:
+
+``` text
+session overview and existing consistency metrics
+good-posture time and longest continuous good-posture period
+feedback-to-correction completion and average correction time
+completed correction-response history
+direction-specific feedback counts and correction averages
+posture-acceptability timeline from recorded samples
+pitch/roll deviation and effective-threshold history
+canonical, maximum effective, and final threshold state
+session/calibration/sampling/upload technical information
+```
+
+The posture timeline groups actual recorded samples into a compact view
+and distinguishes wholly acceptable, wholly deviated, and mixed buckets.
+The deviation chart uses bucket maxima rather than arbitrary sample
+selection, preserving severe deviations while bounding mobile rendering
+work.
+
+Threshold adjustments shown in results are derived from stored effective
+sample thresholds relative to the immutable canonical thresholds. This
+is visualization of persisted values, not a second adaptive calculation.
+The session schema does not persist behavioral-feature EMA history,
+adaptive safety-gate history, adaptive-feedback mode history, or
+reassertion history. The UI explicitly marks those histories as
+unavailable and does not infer or reconstruct them.
+
+Upload failure leaves finalized results visible and retains the existing
+same-session retry action. After a terminal `saved` or `possibly-saved`
+outcome, the results screen offers Start Another Session using the
+existing calibrated-idle lifecycle; recalibration is not required.
 
 ------------------------------------------------------------------------
 

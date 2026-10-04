@@ -92,6 +92,10 @@ import {
   uploadSession,
 } from './services/apiService';
 
+import {
+  SessionResultsDashboard,
+} from './components/SessionResultsDashboard';
+
 
 // =====================================
 // OBJECTS
@@ -2063,7 +2067,9 @@ export default function App() {
         <View style={styles.demoDot} />
         <View style={styles.flexOne}>
           <Text style={styles.demoTitle}>
-            {adaptiveThresholdController.getMode()} — accelerated adaptive timing
+            {adaptiveThresholdController.getMode() === 'DEMO'
+              ? 'DEMO — accelerated adaptive timing'
+              : 'PRODUCTION — normal adaptive timing'}
           </Text>
           <Text style={styles.demoBody}>
             Temporary engineering review configuration. Not production-validated timing.
@@ -2071,6 +2077,9 @@ export default function App() {
         </View>
       </View>
 
+
+      {(performanceMetrics === null || monitoring) && (
+        <>
 
       {/* CURRENT POSTURE */}
 
@@ -2431,392 +2440,40 @@ export default function App() {
         )
       }
 
+        </>
+      )}
+
 
       {/* =================================
           PERFORMANCE METRICS
       ================================= */}
 
       {
-        performanceMetrics !== null && (
+        performanceMetrics !== null &&
+        session !== null &&
+        session.endTime !== null && (
 
-          <View style={styles.card}>
-
-            <Text style={styles.heading}>
-              Performance Metrics
-            </Text>
-
-
-            {
-              sessionUploadState === 'uploading' && (
-
-                <Text style={styles.result}>
-                  Upload Status: Uploading...
-                </Text>
-
-              )
+          <SessionResultsDashboard
+            session={session}
+            metrics={performanceMetrics}
+            uploadState={sessionUploadState}
+            adaptiveMode={adaptiveThresholdController.getMode()}
+            canonicalPitchThreshold={
+              MINIMUM_THRESHOLD +
+              VARIABILITY_FACTOR * session.calibration.pitchStd
             }
-
-
-            {
-              sessionUploadState === 'saved' && (
-
-                <Text style={styles.goodStatus}>
-                  Upload Status: Saved
-                </Text>
-
-              )
+            canonicalRollThreshold={
+              MINIMUM_THRESHOLD +
+              VARIABILITY_FACTOR * session.calibration.rollStd
             }
-
-
-            {
-              sessionUploadState === 'possibly-saved' && (
-
-                <Text style={styles.warning}>
-                  Session may already be saved.
-                </Text>
-
-              )
-            }
-
-
-            {
-              sessionUploadState === 'failed' && (
-
-                <>
-
-                  <Text style={styles.warning}>
-                    Session upload failed.
-                  </Text>
-
-
-                  <Text style={styles.instruction}>
-                    Retry the upload before recalibrating.
-                  </Text>
-
-
-                  <Pressable
-                    style={styles.button}
-                    onPress={retrySessionUpload}
-                  >
-
-                    <Text style={styles.buttonText}>
-                      Retry Upload
-                    </Text>
-
-                  </Pressable>
-
-                </>
-
-              )
-            }
-
-
-            <Text style={styles.result}>
-              Consistency:{' '}
-              {
-                performanceMetrics
-                  .consistency
-                  .toFixed(1)
-              }
-              %
-            </Text>
-
-
-            <Text style={styles.result}>
-              Average Correction Time:{' '}
-
-              {
-                performanceMetrics
-                  .averageCorrectionTime ===
-                  null
-
-                  ? 'N/A'
-
-                  : (
-                    performanceMetrics
-                      .averageCorrectionTime
-                  ).toFixed(2) + ' sec'
-              }
-
-            </Text>
-
-
-            <Text style={styles.result}>
-              Monitoring Duration:{' '}
-
-              {
-                (
-                  performanceMetrics.monitoredDuration /
-                  1000
-                ).toFixed(1)
-              }
-
-              {' sec'}
-
-            </Text>
-
-
-            <Text style={styles.result}>
-              Samples:{' '}
-              {
-                performanceMetrics.sampleCount
-              }
-            </Text>
-
-
-            <Text style={styles.result}>
-              Actual Sampling Rate:{' '}
-
-              {
-                performanceMetrics.actualSamplingRate
-                  .toFixed(1)
-              }
-
-              {' Hz'}
-
-            </Text>
-
-
-            <Text style={styles.result}>
-              Completed Corrections:{' '}
-
-              {
-                performanceMetrics.completedCorrections
-              }
-
-            </Text>
-
-
-            <Text style={styles.result}>
-              Correction Completion Rate:{' '}
-
-              {
-                performanceMetrics.completionRate
-                  .toFixed(1)
-              }
-
-              %
-
-            </Text>
-
-
-            <Text style={styles.result}>
-              Feedback Events:{' '}
-
-              {
-                performanceMetrics
-                  .feedbackEvents
-              }
-
-            </Text>
-
-
-            <Text style={styles.result}>
-              Time in Good Posture:{' '}
-
-              {
-                (
-                  performanceMetrics
-                    .timeInGoodPosture /
-                  1000
-                ).toFixed(1)
-              }
-
-              {' sec'}
-
-            </Text>
-
-
-            <Text style={styles.result}>
-              Longest Continuous Good Posture:{' '}
-
-              {
-                (
-                  performanceMetrics
-                    .longestContinuousGoodPosture /
-                  1000
-                ).toFixed(1)
-              }
-
-              {' sec'}
-
-            </Text>
-
-
-            {/* =================================
-                POSTURE-SPECIFIC METRICS
-            ================================= */}
-
-            <Text style={styles.heading}>
-              Posture-Specific Metrics
-            </Text>
-
-
-            <Text style={styles.result}>
-              Forward:{' '}
-
-              {
-                performanceMetrics
-                  .postureSpecific
-                  .forward
-              }
-
-            </Text>
-
-
-            <Text style={styles.result}>
-              Backward:{' '}
-
-              {
-                performanceMetrics
-                  .postureSpecific
-                  .backward
-              }
-
-            </Text>
-
-
-            <Text style={styles.result}>
-              Left:{' '}
-
-              {
-                performanceMetrics
-                  .postureSpecific
-                  .left
-              }
-
-            </Text>
-
-
-            <Text style={styles.result}>
-              Right:{' '}
-
-              {
-                performanceMetrics
-                  .postureSpecific
-                  .right
-              }
-
-            </Text>
-
-
-            {/* =================================
-                DIRECTION CORRECTION TIMES
-            ================================= */}
-
-            <Text style={styles.heading}>
-              Average Correction Time by Direction
-            </Text>
-
-
-            <Text style={styles.result}>
-              Forward:{' '}
-
-              {
-                performanceMetrics
-                  .directionCorrectionTimes
-                  .forward === null
-
-                  ? 'N/A'
-
-                  : performanceMetrics
-                    .directionCorrectionTimes
-                    .forward
-                    .toFixed(2)
-              }
-
-              {' sec'}
-
-            </Text>
-
-
-            <Text style={styles.result}>
-              Backward:{' '}
-
-              {
-                performanceMetrics
-                  .directionCorrectionTimes
-                  .backward === null
-
-                  ? 'N/A'
-
-                  : performanceMetrics
-                    .directionCorrectionTimes
-                    .backward
-                    .toFixed(2)
-              }
-
-              {' sec'}
-
-            </Text>
-
-
-            <Text style={styles.result}>
-              Left:{' '}
-
-              {
-                performanceMetrics
-                  .directionCorrectionTimes
-                  .left === null
-
-                  ? 'N/A'
-
-                  : performanceMetrics
-                    .directionCorrectionTimes
-                    .left
-                    .toFixed(2)
-              }
-
-              {' sec'}
-
-            </Text>
-
-
-            <Text style={styles.result}>
-              Right:{' '}
-
-              {
-                performanceMetrics
-                  .directionCorrectionTimes
-                  .right === null
-
-                  ? 'N/A'
-
-                  : performanceMetrics
-                    .directionCorrectionTimes
-                    .right
-                    .toFixed(2)
-              }
-
-              {' sec'}
-
-            </Text>
-
-
-            {/* =================================
-                DEVIATION HISTORY
-            ================================= */}
-
-            <Text style={styles.heading}>
-              Deviation History
-            </Text>
-
-
-            <Text style={styles.result}>
-              Recorded Points:{' '}
-
-              {
-                performanceMetrics
-                  .deviationHistory
-                  .length
-              }
-
-            </Text>
-
-          </View>
+            onRetryUpload={retrySessionUpload}
+            onStartNewSession={startMonitoring}
+          />
 
         )
       }
+
+
 
 
       {/* =================================

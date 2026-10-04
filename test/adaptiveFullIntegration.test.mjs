@@ -462,4 +462,18 @@ test('recalibration guard and reset path preserve lifecycle safety without chang
   assert.match(appSource, /Adaptive Threshold Internals/);
   assert.match(appSource, /TEMPORARY REVIEW DEMO CONFIGURATION|accelerated adaptive timing/);
   assert.match(appSource, /getAdaptiveFreezeReasons/);
+
+  const resultsSource = await readFile(
+    new URL('../components/SessionResultsDashboard.tsx', import.meta.url),
+    'utf8'
+  );
+  assert.match(resultsSource, /Session Overview/);
+  assert.match(resultsSource, /Correction Performance/);
+  assert.match(resultsSource, /Adaptive-System Behaviour/);
+  assert.match(resultsSource, /Direction Analysis/);
+  assert.match(resultsSource, /Deviation History/);
+  assert.match(resultsSource, /No posture corrections were triggered during this session\./);
+  assert.match(resultsSource, /No completed correction responses recorded\./);
+  assert.match(resultsSource, /Start Another Session/);
+  assert.doesNotMatch(resultsSource, /calculatePerformanceMetrics/);
 });
