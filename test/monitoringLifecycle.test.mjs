@@ -11,6 +11,10 @@ import {
 } from './loadTypeScriptModule.mjs';
 
 const appSource = await readFile(new URL('../App.tsx', import.meta.url), 'utf8');
+const shellSource = await readFile(
+  new URL('../components/ApplicationShell.tsx', import.meta.url),
+  'utf8'
+);
 const { controller } = await loadAdaptiveThresholdModules();
 const { AdaptiveThresholdController } = controller;
 const {
@@ -58,7 +62,8 @@ test('valid calibration enters calibrated idle and can explicitly start monitori
   assert.match(startMonitoringSource, /currentCalibration === null \|\|\s*!currentCalibration\.valid/);
   assert.match(startMonitoringSource, /const newSession =\s*startSession\(currentCalibration\)/);
   assert.match(startMonitoringSource, /monitoringActive\.current =\s*true;/);
-  assert.match(appSource, /onPress=\{startMonitoring\}[\s\S]*Start Monitoring/);
+  assert.match(shellSource, /onStartMonitoring/);
+  assert.match(shellSource, /label=\{props\.monitoring \? 'Stop Monitoring' : 'Start Monitoring'\}/);
 });
 
 test('stop monitoring finalizes once and preserves the valid calibration', () => {
@@ -78,8 +83,8 @@ test('a newly started zero-sample session can still stop and finalize safely', (
   assert.equal(session.monitoredDuration, 0);
   assert.equal(session.actualSamplingRate, 0);
   assert.match(
-    appSource,
-    /monitoringActive\.current &&\s*calibrationResult !== null &&\s*calibrationResult\.valid &&\s*session !== null &&\s*\(/
+    shellSource,
+    /props\.monitoring \? 'Monitoring in progress' : 'No completed session'/
   );
 });
 
@@ -165,8 +170,8 @@ test('active monitoring continues to block recalibration', () => {
     /if \(monitoringActive\.current\) \{\s*return;/
   );
   assert.match(
-    appSource,
-    /!monitoringActive\.current &&\s*pendingUploadSessionRef\.current === null && \(/
+    shellSource,
+    /disabled=\{props\.monitoring \|\| props\.uploadPending \|\| props\.isCalibrating\}/
   );
 });
 
@@ -180,7 +185,7 @@ test('unresolved upload continues to block both restart and recalibration', () =
     /if \(pendingUploadSessionRef\.current !== null\) \{\s*return;/
   );
   assert.match(
-    appSource,
-    /calibrationResult\.valid &&\s*!monitoringActive\.current &&\s*pendingUploadSessionRef\.current === null &&\s*!sessionUploadActiveRef\.current/
+    shellSource,
+    /disabled=\{!props\.monitoring && \(!calibrated \|\| props\.uploadPending \|\| props\.isCalibrating\)\}/
   );
 });

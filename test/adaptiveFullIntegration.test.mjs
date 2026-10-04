@@ -459,21 +459,25 @@ test('recalibration guard and reset path preserve lifecycle safety without chang
   assert.match(appSource, /adaptiveThresholdController\.getMode\(\)/);
   assert.match(appSource, /adaptiveFeedbackController\.getState\(\)\.mode/);
   assert.match(appSource, /const DASHBOARD_UPDATE_INTERVAL = 200;/);
-  assert.match(appSource, /Adaptive Threshold Internals/);
-  assert.match(appSource, /formatAdaptiveTimingMode/);
-  assert.match(appSource, /getAdaptiveFreezeReasons/);
+
+  const shellSource = await readFile(
+    new URL('../components/ApplicationShell.tsx', import.meta.url),
+    'utf8'
+  );
+  assert.match(shellSource, /Adaptive feedback/);
+  assert.match(shellSource, /formatAdaptiveTimingMode/);
+  assert.match(shellSource, /evidenceEma/);
 
   const resultsSource = await readFile(
     new URL('../components/SessionResultsDashboard.tsx', import.meta.url),
     'utf8'
   );
   assert.match(resultsSource, /Session Overview/);
-  assert.match(resultsSource, /Correction Performance/);
-  assert.match(resultsSource, /Adaptive-System Behaviour/);
-  assert.match(resultsSource, /Direction Analysis/);
-  assert.match(resultsSource, /Deviation History/);
-  assert.match(resultsSource, /No posture corrections were triggered during this session\./);
-  assert.match(resultsSource, /No completed correction responses recorded\./);
-  assert.match(resultsSource, /Start Another Session/);
+  assert.match(resultsSource, /Completed correction records/);
+  assert.match(resultsSource, /Final adaptive result/);
+  assert.match(resultsSource, /Direction distribution/);
+  assert.match(resultsSource, /Pitch and roll deviation/);
+  assert.match(resultsSource, /No completed correction responses were recorded\./);
+  assert.match(resultsSource, /Start another session/);
   assert.doesNotMatch(resultsSource, /calculatePerformanceMetrics/);
 });

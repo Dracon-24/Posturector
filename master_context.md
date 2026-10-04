@@ -3317,3 +3317,58 @@ This architecture captures the central concept of PJT-I:
 > fusion, individualized posture baselines, sustained-deviation
 > detection, real-time haptic feedback, correction-response measurement,
 > and historical performance data.
+
+------------------------------------------------------------------------
+
+# 74. MOBILE INFORMATION ARCHITECTURE AND SAVED CALIBRATION
+
+The Expo application now uses four persistent local destinations without
+adding a navigation framework:
+
+``` text
+Monitor | Session | History | Settings
+```
+
+`Monitor` owns live posture and is divided into `Live`, `Calibration`,
+`Adaptive`, and `System`. `Session` owns the current or selected completed
+result and is divided into `Overview`, `Posture`, `Corrections`, `Adaptive`,
+and `Technical`. `History` is append-oriented and provides `Weekly`, `Daily`,
+and `Sessions` views. `Settings` owns the explicit recalibration action,
+connection status, and application information.
+
+The dashboard continues to consume the existing approximately 5 Hz runtime
+snapshot. The approximately 50 Hz IMU and posture-processing path is unchanged.
+UI components do not run the posture algorithm or add sensor polling.
+
+Canonical calibration is persisted locally with Expo SDK 57-compatible
+`@react-native-async-storage/async-storage`. The versioned record contains:
+
+``` text
+version
+savedAt
+pitchBaseline
+rollBaseline
+pitchStd
+rollStd
+confidence
+sampleCount
+duration
+valid
+```
+
+Startup loads and validates this record before using it. Missing, malformed,
+out-of-contract, non-finite, or unavailable storage falls back to the
+uncalibrated state. A valid saved calibration immediately restores calibrated
+idle and can be reused for a new session. Successful explicit recalibration
+replaces the saved record. Adaptive state never writes to this record.
+
+Every new monitoring session still resets adaptive threshold state, adaptive
+feedback history, correction observation, stability, persistence, feedback,
+metrics, and dashboard diagnostics while reusing only the valid canonical
+calibration.
+
+The backend analytics API remains unchanged. Weekly and daily History groups
+are presentation-level groupings of the existing chronological trend records.
+They use stored monitored duration, good-posture time, feedback counts,
+completed corrections, response-time averages weighted by completed-response
+count, and direction counts. No new clinical or posture metric is introduced.
