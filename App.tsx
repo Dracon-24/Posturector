@@ -1,5 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useRef, useState } from 'react';
+import { ReactNode, useEffect, useRef, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -14,7 +14,11 @@ import {
 } from './processing/deviation';
 
 import {
+  AdaptiveThresholdDiagnostics,
+  AdaptiveThresholdState,
+  AxisAdaptiveThresholdDiagnostics,
   AdaptiveThresholdController,
+  MAX_ADAPTIVE_ADJUSTMENT,
 } from './processing/adaptiveThreshold';
 
 import {
@@ -146,6 +150,7 @@ const VARIABILITY_FACTOR = 2;
 // Development-only real-device validation output is intentionally
 // throttled so sensor logging cannot approach the ~50 Hz processing rate.
 const DEVICE_DIAGNOSTIC_INTERVAL = 5_000;
+const DASHBOARD_UPDATE_INTERVAL = 200;
 
 
 // =====================================
@@ -174,6 +179,15 @@ type SessionUploadState =
   | 'saved'
   | 'failed'
   | 'possibly-saved';
+
+interface DashboardRuntimeState {
+  direction: PostureDirection;
+  adaptiveDiagnostics: AdaptiveThresholdDiagnostics;
+  adaptiveAdjustment: AdaptiveThresholdState;
+  overallDeviation: number;
+  samplingRate: number;
+  monitoredDuration: number;
+}
 
 
 // =====================================
@@ -260,6 +274,18 @@ export default function App() {
   const [deviation, setDeviation] =
     useState<DeviationResult | null>(null);
 
+  const [dashboardRuntime, setDashboardRuntime] =
+    useState<DashboardRuntimeState>({
+      direction: 'neutral',
+      adaptiveDiagnostics:
+        adaptiveThresholdController.getDiagnostics(),
+      adaptiveAdjustment:
+        adaptiveThresholdController.getState(),
+      overallDeviation: 0,
+      samplingRate: 0,
+      monitoredDuration: 0,
+    });
+
 
   // =====================================
   // REFS
@@ -303,6 +329,9 @@ export default function App() {
     useRef<number | null>(null);
 
   const lastDeviceDiagnosticTimestamp =
+    useRef<number | null>(null);
+
+  const lastDashboardTimestamp =
     useRef<number | null>(null);
 
   const analyticsMounted =
@@ -823,6 +852,9 @@ export default function App() {
             lastDeviceDiagnosticTimestamp.current =
               null;
 
+            lastDashboardTimestamp.current =
+              null;
+
             setPerformanceMetrics(
               null
             );
@@ -887,6 +919,14 @@ export default function App() {
 
         const adaptiveThresholdState =
           adaptiveThresholdController.getState();
+
+        const canonicalPitchThreshold =
+          MINIMUM_THRESHOLD +
+          VARIABILITY_FACTOR * currentCalibration.pitchStd;
+
+        const canonicalRollThreshold =
+          MINIMUM_THRESHOLD +
+          VARIABILITY_FACTOR * currentCalibration.rollStd;
 
         const result =
           calculateDeviation(
@@ -1251,6 +1291,52 @@ export default function App() {
 
 
         // =================================
+        // THROTTLED DASHBOARD SNAPSHOT
+        // =================================
+
+        if (
+          lastDashboardTimestamp.current === null ||
+          data.timestamp - lastDashboardTimestamp.current >=
+            DASHBOARD_UPDATE_INTERVAL
+        ) {
+
+          const activeSession =
+            sessionRef.current;
+
+          const monitoredDuration =
+            activeSession !== null &&
+            activeSession.startTime > 0
+              ? Math.max(
+                0,
+                data.timestamp - activeSession.startTime
+              )
+              : 0;
+
+          const samplingRate =
+            activeSession !== null &&
+            monitoredDuration > 0
+              ? activeSession.sampleCount /
+                (monitoredDuration / 1000)
+              : 0;
+
+          setDashboardRuntime({
+            direction,
+            adaptiveDiagnostics:
+              adaptiveThresholdController.getDiagnostics(),
+            adaptiveAdjustment:
+              adaptiveThresholdController.getState(),
+            overallDeviation: currentDeviation,
+            samplingRate,
+            monitoredDuration,
+          });
+
+          lastDashboardTimestamp.current =
+            data.timestamp;
+
+        }
+
+
+        // =================================
         // DEVELOPMENT DEVICE DIAGNOSTICS
         // =================================
 
@@ -1338,12 +1424,8 @@ export default function App() {
                 roll: result.rollThreshold,
               },
               canonicalThreshold: {
-                pitch:
-                  MINIMUM_THRESHOLD +
-                  VARIABILITY_FACTOR * currentCalibration.pitchStd,
-                roll:
-                  MINIMUM_THRESHOLD +
-                  VARIABILITY_FACTOR * currentCalibration.rollStd,
+                pitch: canonicalPitchThreshold,
+                roll: canonicalRollThreshold,
               },
               adaptiveAdjustment:
                 adaptiveThresholdState,
@@ -1392,6 +1474,9 @@ export default function App() {
         null;
 
       lastDeviceDiagnosticTimestamp.current =
+        null;
+
+      lastDashboardTimestamp.current =
         null;
 
     };
@@ -1529,6 +1614,9 @@ export default function App() {
     lastDeviceDiagnosticTimestamp.current =
       null;
 
+    lastDashboardTimestamp.current =
+      null;
+
 
     // ---------------------------------
     // Stop vibration
@@ -1629,6 +1717,9 @@ export default function App() {
       null;
 
     lastDeviceDiagnosticTimestamp.current =
+      null;
+
+    lastDashboardTimestamp.current =
       null;
 
     setDeviation(
@@ -1839,12 +1930,78 @@ export default function App() {
     lastDeviceDiagnosticTimestamp.current =
       null;
 
+    lastDashboardTimestamp.current =
+      null;
+
   };
 
 
   // =====================================
   // UI
   // =====================================
+
+  const calibrated =
+    calibrationResult !== null &&
+    calibrationResult.valid;
+
+  const monitoring =
+    monitoringActive.current;
+
+  const lifecycleState =
+    isCalibrating
+      ? 'CALIBRATING'
+      : monitoring
+        ? 'MONITORING'
+        : sessionUploadActiveRef.current
+          ? 'FINALIZING'
+          : calibrated
+            ? 'CALIBRATED IDLE'
+            : 'UNCALIBRATED';
+
+  const postureState =
+    !monitoring || deviation === null
+      ? 'AWAITING MONITORING'
+      : correctionResponse?.status === 'OBSERVING'
+        ? 'CORRECTING'
+        : deviation.overallDeviation
+          ? 'DEVIATION'
+          : 'GOOD';
+
+  const postureTone =
+    postureState === 'GOOD'
+      ? 'good'
+      : postureState === 'DEVIATION' ||
+        postureState === 'CORRECTING'
+        ? 'warning'
+        : 'neutral';
+
+  const activeAdaptiveDiagnostics =
+    monitoring
+      ? dashboardRuntime.adaptiveDiagnostics
+      : adaptiveThresholdController.getDiagnostics();
+
+  const activeAdaptiveAdjustment =
+    monitoring
+      ? dashboardRuntime.adaptiveAdjustment
+      : adaptiveThresholdController.getState();
+
+  const canonicalPitchThreshold =
+    calibrated
+      ? MINIMUM_THRESHOLD +
+        VARIABILITY_FACTOR * calibrationResult.pitchStd
+      : null;
+
+  const canonicalRollThreshold =
+    calibrated
+      ? MINIMUM_THRESHOLD +
+        VARIABILITY_FACTOR * calibrationResult.rollStd
+      : null;
+
+  const latestCorrection =
+    session?.correctionResponses.at(-1) ?? null;
+
+  const sensorActive =
+    imuData.timestamp > 0;
 
   return (
 
@@ -1858,514 +2015,419 @@ export default function App() {
           HEADER
       ================================= */}
 
-      <Text style={styles.title}>
-        POSTURE BELT
-      </Text>
+      <View style={styles.appHeader}>
+        <View style={styles.brandMark}>
+          <Text style={styles.brandMarkText}>P</Text>
+        </View>
 
+        <View style={styles.brandCopy}>
+          <Text style={styles.eyebrow}>PJT-I</Text>
+          <Text style={styles.title}>
+            Personalized Adaptive{`\n`}Posture Correction
+          </Text>
+        </View>
+      </View>
 
-      <Text style={styles.subtitle}>
-        Personalized Adaptive Posture System
-      </Text>
+      <View style={styles.headerStatusGrid}>
+        <StatusPill
+          label="Lifecycle"
+          value={lifecycleState}
+          tone={monitoring ? 'active' : 'neutral'}
+        />
+        <StatusPill
+          label="Sensor"
+          value={sensorActive ? 'IMU ACTIVE' : 'CONNECTING'}
+          tone={sensorActive ? 'good' : 'neutral'}
+        />
+        <StatusPill
+          label="Calibration"
+          value={calibrated ? 'VALID' : isCalibrating ? 'IN PROGRESS' : 'REQUIRED'}
+          tone={calibrated ? 'good' : 'neutral'}
+        />
+        {sessionUploadState !== 'idle' && (
+          <StatusPill
+            label="Session storage"
+            value={sessionUploadState.replace('-', ' ').toUpperCase()}
+            tone={
+              sessionUploadState === 'saved'
+                ? 'good'
+                : sessionUploadState === 'failed' || sessionUploadState === 'possibly-saved'
+                  ? 'warning'
+                  : 'active'
+            }
+          />
+        )}
+      </View>
 
-
-      {/* =================================
-          ACCELEROMETER
-      ================================= */}
-
-      <View style={styles.card}>
-
-        <Text style={styles.heading}>
-          Accelerometer
-        </Text>
-
-
-        <Text style={styles.value}>
-          X: {imuData.accelerometer.x.toFixed(4)}
-        </Text>
-
-
-        <Text style={styles.value}>
-          Y: {imuData.accelerometer.y.toFixed(4)}
-        </Text>
-
-
-        <Text style={styles.value}>
-          Z: {imuData.accelerometer.z.toFixed(4)}
-        </Text>
-
+      <View style={styles.demoBanner}>
+        <View style={styles.demoDot} />
+        <View style={styles.flexOne}>
+          <Text style={styles.demoTitle}>
+            {adaptiveThresholdController.getMode()} — accelerated adaptive timing
+          </Text>
+          <Text style={styles.demoBody}>
+            Temporary engineering review configuration. Not production-validated timing.
+          </Text>
+        </View>
       </View>
 
 
-      {/* =================================
-          GYROSCOPE
-      ================================= */}
+      {/* CURRENT POSTURE */}
 
-      <View style={styles.card}>
-
-        <Text style={styles.heading}>
-          Gyroscope
+      <View style={[
+        styles.heroCard,
+        postureTone === 'good'
+          ? styles.heroGood
+          : postureTone === 'warning'
+            ? styles.heroWarning
+            : styles.heroNeutral,
+      ]}>
+        <Text style={styles.heroLabel}>CURRENT POSTURE</Text>
+        <Text style={styles.heroState}>{postureState}</Text>
+        <Text style={styles.heroDirection}>
+          {monitoring
+            ? `Direction · ${formatDirection(dashboardRuntime.direction)}`
+            : calibrated
+              ? 'Calibration ready — start monitoring when prepared.'
+              : 'Complete personalized calibration to begin.'}
         </Text>
 
+        <View style={styles.heroMetrics}>
+          <HeroMetric label="Pitch" value={`${pitch.toFixed(1)}°`} />
+          <View style={styles.heroDivider} />
+          <HeroMetric label="Roll" value={`${roll.toFixed(1)}°`} />
+        </View>
 
-        <Text style={styles.value}>
-          X: {imuData.gyroscope.x.toFixed(4)}
+        <Text style={styles.heroExplanation}>
+          {!monitoring || deviation === null
+            ? 'Posture classification begins only during an active monitoring session.'
+            : deviation.overallDeviation
+              ? 'One or more axes are outside the current effective adaptive threshold.'
+              : 'Pitch and roll are within the current effective adaptive thresholds.'}
         </Text>
-
-
-        <Text style={styles.value}>
-          Y: {imuData.gyroscope.y.toFixed(4)}
-        </Text>
-
-
-        <Text style={styles.value}>
-          Z: {imuData.gyroscope.z.toFixed(4)}
-        </Text>
-
       </View>
 
 
-      {/* =================================
-          BODY ORIENTATION
-      ================================= */}
+      {/* ORIENTATION */}
 
-      <View style={styles.card}>
-
-        <Text style={styles.heading}>
-          Body Orientation
-        </Text>
-
-
-        <Text style={styles.orientation}>
-          Pitch: {pitch.toFixed(2)}°
-        </Text>
-
-
-        <Text style={styles.orientation}>
-          Roll: {roll.toFixed(2)}°
-        </Text>
-
-      </View>
-
-
-      {/* =================================
-          PERSONALIZED DEVIATION
-      ================================= */}
-
-      {
-        calibrationResult !== null &&
-        calibrationResult.valid &&
-        deviation !== null && (
-
-          <View style={styles.card}>
-
-            <Text style={styles.heading}>
-              Personalized Deviation
-            </Text>
-
-
-            <Text style={styles.result}>
-              Pitch Deviation:{' '}
-              {deviation.pitchDeviation.toFixed(2)}°
-            </Text>
-
-
-            <Text style={styles.result}>
-              Pitch Threshold:{' '}
-              {deviation.pitchThreshold.toFixed(2)}°
-            </Text>
-
-
-            <Text style={styles.result}>
-              Roll Deviation:{' '}
-              {deviation.rollDeviation.toFixed(2)}°
-            </Text>
-
-
-            <Text style={styles.result}>
-              Roll Threshold:{' '}
-              {deviation.rollThreshold.toFixed(2)}°
-            </Text>
-
-
-            <Text
-              style={
-                deviation.overallDeviation
-                  ? styles.warningStatus
-                  : styles.goodStatus
-              }
+      <SectionCard
+        title="Orientation"
+        caption="Filtered body-frame orientation relative to the calibrated posture."
+      >
+        <View style={styles.orientationLayout}>
+          <View style={styles.orientationVisual}>
+            <View style={styles.orientationCrossHorizontal} />
+            <View style={styles.orientationCrossVertical} />
+            <View
+              style={[
+                styles.orientationIndicator,
+                {
+                  transform: [
+                    { translateY: clampDisplayOffset(pitch) },
+                    { rotate: `${clampDisplayAngle(roll)}deg` },
+                  ],
+                },
+              ]}
             >
-
-              {
-                deviation.overallDeviation
-                  ? '⚠ POSTURE DEVIATION'
-                  : '✓ POSTURE ACCEPTABLE'
-              }
-
-            </Text>
-
+              <View style={styles.orientationIndicatorLine} />
+            </View>
           </View>
 
-        )
-      }
-
-
-      {/* ============================
-          STABILITY UI CARD
-      ============================== */}
-
-      {
-        calibrationResult !== null &&
-        calibrationResult.valid &&
-        stability !== null && (
-
-          <View style={styles.card}>
-
-            <Text style={styles.heading}>
-              Posture Stability
-            </Text>
-
-
-            <Text style={styles.result}>
-              Pitch Variability:{' '}
-              {stability.pitchStd.toFixed(2)}°
-            </Text>
-
-
-            <Text style={styles.result}>
-              Roll Variability:{' '}
-              {stability.rollStd.toFixed(2)}°
-            </Text>
-
-
-            <Text style={styles.result}>
-              Samples:{' '}
-              {stability.sampleCount}
-            </Text>
-
-
-            <Text style={styles.result}>
-              Window:{' '}
-              {stability.windowDuration.toFixed(1)}
-              {' seconds'}
-            </Text>
-
-
-            <Text
-              style={
-                stability.stable
-                  ? styles.goodStatus
-                  : styles.warningStatus
-              }
-            >
-
-              {
-                stability.stable
-                  ? '✓ POSTURE STABLE'
-                  : '⚠ POSTURE MOVEMENT'
-              }
-
-            </Text>
-
+          <View style={styles.orientationValues}>
+            <MetricRow label="Body pitch" value={`${pitch.toFixed(2)}°`} />
+            <MetricRow label="Body roll" value={`${roll.toFixed(2)}°`} />
+            <MetricRow
+              label="Direction"
+              value={monitoring ? formatDirection(dashboardRuntime.direction) : 'Neutral'}
+            />
           </View>
+        </View>
 
-        )
-      }
-
-
-      {/* ============================
-          PERSISTENCE UI CARD
-      ============================== */}
-
-      {
-        calibrationResult !== null &&
-        calibrationResult.valid &&
-        persistence !== null && (
-
-          <View style={styles.card}>
-
-            <Text style={styles.heading}>
-              Deviation Persistence
-            </Text>
-
-
-            <Text style={styles.result}>
-              Outside Duration:{' '}
-              {persistence.elapsedOutside.toFixed(1)}
-              {' seconds'}
-            </Text>
-
-
-            <Text
-              style={
-                persistence.isSustained
-                  ? styles.warningStatus
-                  : styles.goodStatus
-              }
-            >
-
-              {
-                persistence.isSustained
-                  ? '⚠ SUSTAINED DEVIATION'
-                  : 'MONITORING DEVIATION'
-              }
-
-            </Text>
-
+        <View style={styles.subtlePanel}>
+          <Text style={styles.subtlePanelTitle}>Personalized calibration baseline</Text>
+          <View style={styles.twoColumnMetrics}>
+            <CompactMetric
+              label="Pitch baseline"
+              value={calibrated ? `${calibrationResult.pitchBaseline.toFixed(2)}°` : '—'}
+            />
+            <CompactMetric
+              label="Roll baseline"
+              value={calibrated ? `${calibrationResult.rollBaseline.toFixed(2)}°` : '—'}
+            />
           </View>
-
-        )
-      }
-
-
-      {/* =================================
-          FEEDBACK UI CARD
-      ===================================== */}
-
-      {
-        calibrationResult !== null &&
-        calibrationResult.valid &&
-        feedback !== null && (
-
-          <View style={styles.card}>
-
-            <Text style={styles.heading}>
-              Feedback Controller
-            </Text>
+        </View>
+      </SectionCard>
 
 
-            <Text
-              style={
-                feedback.shouldVibrate
-                  ? styles.warningStatus
-                  : styles.goodStatus
-              }
-            >
+      {/* DEVIATION */}
 
-              {
-                feedback.shouldVibrate
-                  ? '● FEEDBACK TRIGGERED'
-                  : '● NO FEEDBACK'
-              }
+      <SectionCard
+        title="Personalized Deviation"
+        caption="Canonical thresholds stay fixed; adaptive adjustments affect only the effective thresholds."
+      >
+        <View style={styles.axisGrid}>
+          <AxisDeviationPanel
+            axis="Pitch"
+            deviation={deviation?.pitchDeviation ?? null}
+            canonicalThreshold={canonicalPitchThreshold}
+            effectiveThreshold={deviation?.pitchThreshold ?? null}
+            adjustment={activeAdaptiveAdjustment.pitchAdjustment}
+            outside={deviation?.pitchOutside ?? false}
+            available={monitoring && deviation !== null}
+          />
+          <AxisDeviationPanel
+            axis="Roll"
+            deviation={deviation?.rollDeviation ?? null}
+            canonicalThreshold={canonicalRollThreshold}
+            effectiveThreshold={deviation?.rollThreshold ?? null}
+            adjustment={activeAdaptiveAdjustment.rollAdjustment}
+            outside={deviation?.rollOutside ?? false}
+            available={monitoring && deviation !== null}
+          />
+        </View>
 
-            </Text>
+        <View style={styles.legendRow}>
+          <View style={[styles.legendSwatch, styles.canonicalSwatch]} />
+          <Text style={styles.legendText}>Canonical personalized threshold</Text>
+          <View style={[styles.legendSwatch, styles.effectiveSwatch]} />
+          <Text style={styles.legendText}>Effective adaptive threshold</Text>
+        </View>
+
+        <View style={styles.deviationSummary}>
+          <CompactMetric
+            label="Overall deviation"
+            value={monitoring && deviation ? `${dashboardRuntime.overallDeviation.toFixed(2)}°` : '—'}
+          />
+          <CompactMetric
+            label="Overall status"
+            value={monitoring && deviation ? deviation.overallDeviation ? 'Outside' : 'Within' : 'Waiting'}
+          />
+        </View>
+      </SectionCard>
 
 
-            {
-              feedback.shouldVibrate && (
+      {/* STABILITY + PERSISTENCE */}
 
-                <Text style={styles.result}>
-
-                  Vibration:{' '}
-                  {feedback.vibrationDuration}
-                  {' ms'}
-
-                </Text>
-
-              )
+      <SectionCard
+        title="Stability & Persistence"
+        caption="Feedback eligibility requires stable posture and a sustained deviation."
+      >
+        <View style={styles.signalGrid}>
+          <SignalPanel
+            title="Stability"
+            status={
+              !monitoring || stability === null
+                ? 'Waiting'
+                : stability.stable
+                  ? 'Stable'
+                  : 'Movement detected'
             }
+            active={monitoring && stability?.stable === true}
+          >
+            <MetricRow label="Pitch variability" value={stability ? `${stability.pitchStd.toFixed(2)}°` : '—'} />
+            <MetricRow label="Roll variability" value={stability ? `${stability.rollStd.toFixed(2)}°` : '—'} />
+            <MetricRow label="Window samples" value={stability ? `${stability.sampleCount}` : '—'} />
+            <MetricRow label="Window duration" value={stability ? `${stability.windowDuration.toFixed(1)} s` : '—'} />
+          </SignalPanel>
 
-          </View>
-
-        )
-      }
-
-
-      {/* =================================
-          CORRECTION RESPONSE
-      ================================= */}
-
-      {
-        calibrationResult !== null &&
-        calibrationResult.valid &&
-        correctionResponse !== null && (
-
-          <View style={styles.card}>
-
-            <Text style={styles.heading}>
-              Correction Response
+          <SignalPanel
+            title="Persistence"
+            status={
+              !monitoring || persistence === null
+                ? 'Waiting'
+                : persistence.isSustained
+                  ? 'Sustained'
+                  : persistence.isOutside
+                    ? 'Accumulating'
+                    : 'Reset'
+            }
+            active={monitoring && persistence?.isSustained === true}
+            warning={monitoring && persistence?.isOutside === true}
+          >
+            <MetricRow
+              label="Outside duration"
+              value={persistence ? `${persistence.elapsedOutside.toFixed(1)} s` : '—'}
+            />
+            <Text style={styles.progressLabel}>3-second persistence requirement</Text>
+            <ProgressBar
+              value={persistence ? persistence.elapsedOutside / 3 : 0}
+              warning={persistence?.isOutside === true}
+            />
+            <Text style={styles.microcopy}>
+              {persistence?.isOutside
+                ? stability?.stable
+                  ? 'Stable deviation is accumulating.'
+                  : 'Transient instability resets accumulation.'
+                : 'No eligible deviation is accumulating.'}
             </Text>
+          </SignalPanel>
+        </View>
+      </SectionCard>
 
 
-            {/* =============================
-                WAITING
-            ============================== */}
+      {/* FEEDBACK + CORRECTION */}
 
-            {
-              correctionResponse.status ===
-              'WAITING' && (
-
-                <Text style={styles.result}>
-                  Waiting for feedback...
-                </Text>
-
-              )
-            }
-
-
-            {/* =============================
-                OBSERVING
-            ============================== */}
-
-            {
-              correctionResponse.status ===
-              'OBSERVING' && (
-
-                <>
-
-                  <Text style={styles.result}>
-                    Initial Deviation:{' '}
-
-                    {
-                      correctionResponse
-                        .initialDeviation
-                        .toFixed(2)
-                    }°
-
-                  </Text>
-
-
-                  <Text style={styles.result}>
-                    Current Deviation:{' '}
-
-                    {
-                      correctionResponse
-                        .currentDeviation
-                        .toFixed(2)
-                    }°
-
-                  </Text>
-
-
-                  <Text style={styles.result}>
-                    Response Time:{' '}
-
-                    {
-                      correctionResponse
-                        .elapsedTime
-                        .toFixed(1)
-                    }
-
-                    {' sec'}
-
-                  </Text>
-
-
-                  <Text style={styles.warningStatus}>
-                    ⚠ CORRECTION REQUIRED
-                  </Text>
-
-                </>
-
-              )
-            }
-
-
-            {/* =============================
-                CORRECTED
-            ============================== */}
-
-            {
-              correctionResponse.status ===
-              'CORRECTED' && (
-
-                <>
-
-                  <Text style={styles.result}>
-                    Initial Deviation:{' '}
-
-                    {
-                      correctionResponse
-                        .initialDeviation
-                        .toFixed(2)
-                    }°
-
-                  </Text>
-
-
-                  <Text style={styles.result}>
-                    Final Deviation:{' '}
-
-                    {
-                      correctionResponse
-                        .currentDeviation
-                        .toFixed(2)
-                    }°
-
-                  </Text>
-
-
-                  <Text style={styles.result}>
-                    Response Time:{' '}
-
-                    {
-                      correctionResponse
-                        .responseTime
-                        .toFixed(2)
-                    }
-
-                    {' sec'}
-
-                  </Text>
-
-
-                  <Text style={styles.goodStatus}>
-                    ✓ CORRECTION DETECTED
-                  </Text>
-
-                </>
-
-              )
-            }
-
+      <SectionCard
+        title="Feedback & Correction"
+        caption="Adaptive feedback persistence is separate from adaptive threshold relaxation."
+      >
+        <View style={styles.feedbackHeader}>
+          <View>
+            <Text style={styles.fieldLabel}>HAPTIC FEEDBACK</Text>
+            <Text style={feedback?.shouldVibrate ? styles.feedbackActive : styles.feedbackInactive}>
+              {feedback?.shouldVibrate ? 'ACTIVE' : 'INACTIVE'}
+            </Text>
           </View>
+          <StatusPill
+            label="Adaptive feedback"
+            value={feedback?.adaptiveMode ?? adaptiveFeedbackController.getState().mode}
+            tone={feedback?.adaptiveMode === 'NORMAL' ? 'neutral' : 'active'}
+          />
+        </View>
 
-        )
-      }
+        <View style={styles.twoColumnMetrics}>
+          <CompactMetric
+            label="Feedback direction"
+            value={feedback?.shouldVibrate ? formatDirection(correctionResponse?.direction ?? dashboardRuntime.direction) : 'None'}
+          />
+          <CompactMetric
+            label="Correction state"
+            value={correctionResponse?.status ?? 'WAITING'}
+          />
+          <CompactMetric
+            label="Feedback timestamp"
+            value={formatTimestamp(correctionResponse?.feedbackTimestamp ?? null)}
+          />
+          <CompactMetric
+            label="Response duration"
+            value={
+              correctionResponse?.status === 'CORRECTED'
+                ? `${correctionResponse.responseTime.toFixed(2)} s`
+                : correctionResponse?.status === 'OBSERVING'
+                  ? `${correctionResponse.elapsedTime.toFixed(1)} s`
+                  : '—'
+            }
+          />
+        </View>
+
+        <View style={styles.subtlePanel}>
+          <Text style={styles.subtlePanelTitle}>Latest completed correction</Text>
+          {latestCorrection === null ? (
+            <Text style={styles.emptyText}>No completed correction in this session.</Text>
+          ) : (
+            <>
+              <MetricRow label="Direction" value={formatDirection(latestCorrection.direction)} />
+              <MetricRow label="Correction timestamp" value={formatTimestamp(latestCorrection.correctionTimestamp)} />
+              <MetricRow label="Response time" value={`${latestCorrection.responseTime.toFixed(2)} s`} />
+              <MetricRow label="Deviation" value={`${latestCorrection.initialDeviation.toFixed(2)}° → ${latestCorrection.finalDeviation.toFixed(2)}°`} />
+            </>
+          )}
+        </View>
+      </SectionCard>
 
 
-      {/* =================================
-          MONITORING SESSION
-      ================================= */}
+      {/* ADAPTIVE THRESHOLD */}
+
+      <SectionCard
+        title="Adaptive Threshold Internals"
+        caption="Behavioral evidence can temporarily relax effective thresholds without changing calibration."
+        accessory={
+          <View style={styles.modeBadge}>
+            <Text style={styles.modeBadgeText}>{adaptiveThresholdController.getMode()}</Text>
+          </View>
+        }
+      >
+        <AdaptiveAxisPanel
+          axis="Pitch"
+          diagnostics={activeAdaptiveDiagnostics.pitch}
+          adjustment={activeAdaptiveAdjustment.pitchAdjustment}
+          canonicalThreshold={canonicalPitchThreshold}
+          effectiveThreshold={deviation?.pitchThreshold ?? canonicalPitchThreshold}
+        />
+
+        <AdaptiveAxisPanel
+          axis="Roll"
+          diagnostics={activeAdaptiveDiagnostics.roll}
+          adjustment={activeAdaptiveAdjustment.rollAdjustment}
+          canonicalThreshold={canonicalRollThreshold}
+          effectiveThreshold={deviation?.rollThreshold ?? canonicalRollThreshold}
+        />
+
+        <View style={styles.adaptationSummary}>
+          <CompactMetric
+            label="Maximum adjustment"
+            value={`+${MAX_ADAPTIVE_ADJUSTMENT.toFixed(0)}°`}
+          />
+          <CompactMetric
+            label="Valid adaptive samples"
+            value={`${activeAdaptiveDiagnostics.validSampleCount}`}
+          />
+          <CompactMetric
+            label="Correction responses"
+            value={`${activeAdaptiveDiagnostics.correctionResponseCount}`}
+          />
+          <CompactMetric
+            label="Observation duration"
+            value={`${(activeAdaptiveDiagnostics.observationDuration / 1000).toFixed(1)} s`}
+          />
+        </View>
+      </SectionCard>
+
+
+      {/* RUNTIME STATUS */}
+
+      <SectionCard
+        title="Runtime Status"
+        caption="Live engineering telemetry for device and session validation."
+      >
+        <View style={styles.runtimeGrid}>
+          <CompactMetric label="Monitoring" value={monitoring ? 'Active' : 'Inactive'} />
+          <CompactMetric label="Calibration" value={calibrated ? 'Valid' : 'Unavailable'} />
+          <CompactMetric label="IMU stream" value={sensorActive ? 'Receiving' : 'Connecting'} />
+          <CompactMetric
+            label="Sampling rate"
+            value={monitoring ? `${dashboardRuntime.samplingRate.toFixed(1)} Hz` : '—'}
+          />
+          <CompactMetric
+            label="Session elapsed"
+            value={monitoring ? formatDuration(dashboardRuntime.monitoredDuration) : '—'}
+          />
+          <CompactMetric label="Target rate" value="≈ 50 Hz" />
+        </View>
+
+        <View style={styles.rawSensorPanel}>
+          <Text style={styles.rawSensorTitle}>Raw IMU stream</Text>
+          <Text style={styles.rawSensorText}>
+            ACC  X {imuData.accelerometer.x.toFixed(3)}  Y {imuData.accelerometer.y.toFixed(3)}  Z {imuData.accelerometer.z.toFixed(3)}
+          </Text>
+          <Text style={styles.rawSensorText}>
+            GYRO X {imuData.gyroscope.x.toFixed(3)}  Y {imuData.gyroscope.y.toFixed(3)}  Z {imuData.gyroscope.z.toFixed(3)}
+          </Text>
+        </View>
+      </SectionCard>
+
+
+      {/* SESSION CONTROL */}
 
       {
         monitoringActive.current &&
         calibrationResult !== null &&
         calibrationResult.valid &&
-        session !== null &&
-        (
-
-          <View style={styles.card}>
-
-            <Text style={styles.heading}>
-              Monitoring Session
+        session !== null && (
+        <View style={styles.sessionControlCard}>
+          <View style={styles.flexOne}>
+            <Text style={styles.sessionControlTitle}>Monitoring session active</Text>
+            <Text style={styles.sessionControlBody}>
+              {session.samples.length} samples · {session.feedbackEvents.length} feedback events
             </Text>
-
-
-            <Text style={styles.result}>
-              Samples:{' '}
-              {session.samples.length}
-            </Text>
-
-
-            <Text style={styles.result}>
-              Feedback Events:{' '}
-              {session.feedbackEvents.length}
-            </Text>
-
-
-            <Pressable
-              style={styles.button}
-              onPress={stopMonitoring}
-            >
-
-              <Text style={styles.buttonText}>
-                Stop Monitoring
-              </Text>
-
-            </Pressable>
-
           </View>
-
+          <Pressable
+            style={({ pressed }) => [styles.stopButton, pressed && styles.buttonPressed]}
+            onPress={stopMonitoring}
+          >
+            <Text style={styles.stopButtonText}>Stop Monitoring</Text>
+          </Pressable>
+        </View>
         )
       }
 
@@ -3320,12 +3382,12 @@ export default function App() {
       <View style={styles.statusCard}>
 
         <Text style={styles.status}>
-          ● IMU ACTIVE
+          PJT-I Engineering Review Build
         </Text>
 
 
         <Text style={styles.frequency}>
-          Target sampling: 50 Hz
+          Adaptive timing mode: {adaptiveThresholdController.getMode()}
         </Text>
 
       </View>
@@ -3338,6 +3400,313 @@ export default function App() {
   );
 }
 
+
+// =====================================
+// DASHBOARD PRESENTATION COMPONENTS
+// =====================================
+
+type StatusTone =
+  | 'neutral'
+  | 'good'
+  | 'active'
+  | 'warning';
+
+function SectionCard({
+  title,
+  caption,
+  accessory,
+  children,
+}: {
+  title: string;
+  caption?: string;
+  accessory?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <View style={styles.sectionCard}>
+      <View style={styles.sectionHeader}>
+        <View style={styles.flexOne}>
+          <Text style={styles.sectionTitle}>{title}</Text>
+          {caption ? <Text style={styles.sectionCaption}>{caption}</Text> : null}
+        </View>
+        {accessory}
+      </View>
+      {children}
+    </View>
+  );
+}
+
+function StatusPill({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: StatusTone;
+}) {
+  const toneStyle =
+    tone === 'good'
+      ? styles.statusPillGood
+      : tone === 'active'
+        ? styles.statusPillActive
+        : tone === 'warning'
+          ? styles.statusPillWarning
+          : styles.statusPillNeutral;
+
+  return (
+    <View style={[styles.statusPill, toneStyle]}>
+      <Text style={styles.statusPillLabel}>{label}</Text>
+      <Text style={styles.statusPillValue}>{value}</Text>
+    </View>
+  );
+}
+
+function HeroMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.heroMetric}>
+      <Text style={styles.heroMetricLabel}>{label}</Text>
+      <Text style={styles.heroMetricValue}>{value}</Text>
+    </View>
+  );
+}
+
+function MetricRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.metricRow}>
+      <Text style={styles.metricLabel}>{label}</Text>
+      <Text style={styles.metricValue}>{value}</Text>
+    </View>
+  );
+}
+
+function CompactMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.compactMetric}>
+      <Text style={styles.compactMetricLabel}>{label}</Text>
+      <Text style={styles.compactMetricValue}>{value}</Text>
+    </View>
+  );
+}
+
+function ProgressBar({ value, warning = false }: { value: number; warning?: boolean }) {
+  const boundedValue = Math.max(0, Math.min(1, value));
+
+  return (
+    <View style={styles.progressTrack}>
+      <View
+        style={[
+          styles.progressFill,
+          warning && styles.progressFillWarning,
+          { width: `${boundedValue * 100}%` },
+        ]}
+      />
+    </View>
+  );
+}
+
+function SignalPanel({
+  title,
+  status,
+  active,
+  warning = false,
+  children,
+}: {
+  title: string;
+  status: string;
+  active: boolean;
+  warning?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <View style={styles.signalPanel}>
+      <View style={styles.signalHeader}>
+        <Text style={styles.signalTitle}>{title}</Text>
+        <View style={[
+          styles.signalStatus,
+          active
+            ? styles.signalStatusGood
+            : warning
+              ? styles.signalStatusWarning
+              : styles.signalStatusNeutral,
+        ]}>
+          <Text style={styles.signalStatusText}>{status}</Text>
+        </View>
+      </View>
+      {children}
+    </View>
+  );
+}
+
+function AxisDeviationPanel({
+  axis,
+  deviation,
+  canonicalThreshold,
+  effectiveThreshold,
+  adjustment,
+  outside,
+  available,
+}: {
+  axis: string;
+  deviation: number | null;
+  canonicalThreshold: number | null;
+  effectiveThreshold: number | null;
+  adjustment: number;
+  outside: boolean;
+  available: boolean;
+}) {
+  return (
+    <View style={styles.axisPanel}>
+      <View style={styles.axisHeader}>
+        <Text style={styles.axisTitle}>{axis}</Text>
+        <View style={[styles.axisState, outside && available ? styles.axisStateOutside : styles.axisStateInside]}>
+          <Text style={styles.axisStateText}>
+            {!available ? 'WAITING' : outside ? 'OUTSIDE' : 'WITHIN'}
+          </Text>
+        </View>
+      </View>
+      <Text style={styles.axisDeviationValue}>
+        {deviation === null ? '—' : `${deviation.toFixed(2)}°`}
+      </Text>
+      <Text style={styles.axisDeviationLabel}>current absolute deviation</Text>
+      <View style={styles.thresholdStack}>
+        <MetricRow
+          label="Canonical threshold"
+          value={canonicalThreshold === null ? '—' : `${canonicalThreshold.toFixed(2)}°`}
+        />
+        <MetricRow label="Adaptive adjustment" value={`+${adjustment.toFixed(2)}°`} />
+        <MetricRow
+          label="Effective threshold"
+          value={effectiveThreshold === null ? '—' : `${effectiveThreshold.toFixed(2)}°`}
+        />
+      </View>
+    </View>
+  );
+}
+
+function FeatureGauge({
+  label,
+  value,
+  shortTerm,
+  longTerm,
+}: {
+  label: string;
+  value: number;
+  shortTerm: number;
+  longTerm: number;
+}) {
+  return (
+    <View style={styles.featureRow}>
+      <View style={styles.featureLabelRow}>
+        <Text style={styles.featureLabel}>{label}</Text>
+        <Text style={styles.featureValue}>{value.toFixed(2)}</Text>
+      </View>
+      <ProgressBar value={value} />
+      <Text style={styles.featureEmaText}>
+        Short EMA {shortTerm.toFixed(2)}  ·  Long EMA {longTerm.toFixed(2)}
+      </Text>
+    </View>
+  );
+}
+
+function SafetyGate({ label, allowing }: { label: string; allowing: boolean }) {
+  return (
+    <View style={[styles.safetyGate, allowing ? styles.safetyGateAllow : styles.safetyGateBlock]}>
+      <View style={[styles.safetyDot, allowing ? styles.safetyDotAllow : styles.safetyDotBlock]} />
+      <Text style={styles.safetyGateLabel}>{label}</Text>
+      <Text style={styles.safetyGateValue}>{allowing ? 'ALLOW' : 'BLOCK'}</Text>
+    </View>
+  );
+}
+
+function AdaptiveAxisPanel({
+  axis,
+  diagnostics,
+  adjustment,
+  canonicalThreshold,
+  effectiveThreshold,
+}: {
+  axis: string;
+  diagnostics: AxisAdaptiveThresholdDiagnostics;
+  adjustment: number;
+  canonicalThreshold: number | null;
+  effectiveThreshold: number | null;
+}) {
+  const { features, featureEmaValues } = diagnostics;
+  const freezeReasons = getAdaptiveFreezeReasons(diagnostics);
+
+  return (
+    <View style={styles.adaptiveAxisPanel}>
+      <View style={styles.adaptiveAxisHeader}>
+        <Text style={styles.adaptiveAxisTitle}>{axis} axis</Text>
+        <Text style={styles.adaptiveAxisAdjustment}>+{adjustment.toFixed(2)}° adjustment</Text>
+      </View>
+
+      <Text style={styles.subsectionLabel}>NORMALIZED BEHAVIORAL FEATURES · 0–1</Text>
+      <FeatureGauge label="Deviation trend" value={features.deviationTrend} {...featureEmaValues.deviation} />
+      <FeatureGauge label="Deviation frequency" value={features.deviationFrequency} {...featureEmaValues.frequency} />
+      <FeatureGauge label="Correction-response trend" value={features.correctionTrend} {...featureEmaValues.correction} />
+      <FeatureGauge label="Good-posture duration decline" value={features.goodPostureDecline} {...featureEmaValues.goodPostureDuration} />
+      <FeatureGauge label="Near-threshold exposure" value={features.nearThresholdExposure} {...featureEmaValues.nearThreshold} />
+
+      <View style={styles.evidencePanel}>
+        <CompactMetric label="Combined evidence" value={diagnostics.combinedEvidence.toFixed(2)} />
+        <CompactMetric label="Evidence EMA" value={diagnostics.evidenceEma.toFixed(2)} />
+        <CompactMetric label="Canonical threshold" value={canonicalThreshold === null ? '—' : `${canonicalThreshold.toFixed(2)}°`} />
+        <CompactMetric label="Effective threshold" value={effectiveThreshold === null ? '—' : `${effectiveThreshold.toFixed(2)}°`} />
+      </View>
+
+      <Text style={styles.subsectionLabel}>SAFETY GATES</Text>
+      <View style={styles.safetyGrid}>
+        <SafetyGate label="Sufficient data" allowing={diagnostics.dataSufficient} />
+        <SafetyGate label="Stable posture" allowing={!diagnostics.unstable} />
+        <SafetyGate label="Severe-deviation veto clear" allowing={!diagnostics.severeDeviation} />
+        <SafetyGate label="Major-deterioration veto clear" allowing={!diagnostics.majorDeterioration} />
+      </View>
+      <Text style={freezeReasons.length > 0 ? styles.freezeWarning : styles.freezeReady}>
+        {freezeReasons.length > 0
+          ? `Adaptation frozen: ${freezeReasons.join(', ')}.`
+          : 'Safety gates allow bounded adaptation from behavioral evidence.'}
+      </Text>
+    </View>
+  );
+}
+
+function getAdaptiveFreezeReasons(
+  diagnostics: AxisAdaptiveThresholdDiagnostics
+): string[] {
+  const reasons: string[] = [];
+  if (!diagnostics.dataSufficient) reasons.push('insufficient data');
+  if (diagnostics.unstable) reasons.push('unstable posture');
+  if (diagnostics.severeDeviation) reasons.push('severe deviation');
+  if (diagnostics.majorDeterioration) reasons.push('major deterioration');
+  return reasons;
+}
+
+function formatDirection(direction: PostureDirection | null): string {
+  if (direction === null) return 'None';
+  return direction.charAt(0).toUpperCase() + direction.slice(1);
+}
+
+function formatTimestamp(timestamp: number | null): string {
+  if (timestamp === null) return '—';
+  return `${(timestamp / 1000).toFixed(2)} s`;
+}
+
+function formatDuration(duration: number): string {
+  const totalSeconds = Math.max(0, Math.floor(duration / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+function clampDisplayOffset(pitch: number): number {
+  return Math.max(-18, Math.min(18, pitch - 90));
+}
+
+function clampDisplayAngle(roll: number): number {
+  return Math.max(-25, Math.min(25, roll));
+}
 
 // =====================================
 // DETERMINE POSTURE DIRECTION
@@ -3446,16 +3815,18 @@ function determinePostureDirection(
 const styles = StyleSheet.create({
 
   container: {
-    padding: 20,
-    paddingTop: 60,
-    backgroundColor: '#f5f5f5',
+    paddingHorizontal: 16,
+    paddingTop: 54,
+    paddingBottom: 48,
+    backgroundColor: '#F3F6F9',
   },
 
 
   title: {
-    fontSize: 28,
-    fontWeight: '700',
-    textAlign: 'center',
+    fontSize: 24,
+    lineHeight: 29,
+    fontWeight: '800',
+    color: '#132238',
   },
 
 
@@ -3469,23 +3840,28 @@ const styles = StyleSheet.create({
 
   card: {
     backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 12,
+    borderRadius: 18,
+    padding: 18,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#E4EAF0',
   },
 
 
   calibrationCard: {
     backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 12,
+    borderRadius: 18,
+    padding: 18,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#E4EAF0',
   },
 
 
   heading: {
-    fontSize: 20,
-    fontWeight: '600',
+    fontSize: 19,
+    fontWeight: '700',
+    color: '#132238',
     marginBottom: 12,
   },
 
@@ -3512,7 +3888,7 @@ const styles = StyleSheet.create({
 
 
   button: {
-    backgroundColor: '#222',
+    backgroundColor: '#173F67',
     paddingVertical: 14,
     borderRadius: 10,
     marginTop: 12,
@@ -3545,11 +3921,13 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     marginBottom: 12,
+    color: '#132238',
   },
 
 
   result: {
-    fontSize: 16,
+    fontSize: 15,
+    color: '#34465A',
     marginVertical: 3,
   },
 
@@ -3565,6 +3943,7 @@ const styles = StyleSheet.create({
   warning: {
     fontSize: 15,
     marginTop: 10,
+    color: '#9C3D29',
   },
 
 
@@ -3572,6 +3951,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     marginTop: 15,
+    color: '#16705A',
   },
 
 
@@ -3579,6 +3959,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     marginTop: 15,
+    color: '#B55235',
   },
 
 
@@ -3598,6 +3979,800 @@ const styles = StyleSheet.create({
   frequency: {
     color: '#666',
     marginTop: 5,
+  },
+
+  flexOne: {
+    flex: 1,
+  },
+
+  appHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 18,
+  },
+
+  brandMark: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: '#173F67',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 13,
+  },
+
+  brandMarkText: {
+    color: '#FFFFFF',
+    fontSize: 23,
+    fontWeight: '900',
+  },
+
+  brandCopy: {
+    flex: 1,
+  },
+
+  eyebrow: {
+    color: '#4B6C8F',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.8,
+    marginBottom: 2,
+  },
+
+  headerStatusGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 10,
+  },
+
+  statusPill: {
+    minWidth: 104,
+    flexGrow: 1,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+  },
+
+  statusPillNeutral: {
+    backgroundColor: '#F7F9FB',
+    borderColor: '#DCE4EC',
+  },
+
+  statusPillGood: {
+    backgroundColor: '#EDF8F4',
+    borderColor: '#B9E0D3',
+  },
+
+  statusPillActive: {
+    backgroundColor: '#EDF4FB',
+    borderColor: '#BED4E8',
+  },
+
+  statusPillWarning: {
+    backgroundColor: '#FFF5E8',
+    borderColor: '#EECDA3',
+  },
+
+  statusPillLabel: {
+    color: '#687A8D',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+
+  statusPillValue: {
+    color: '#18324B',
+    fontSize: 12,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+
+  demoBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    borderRadius: 14,
+    backgroundColor: '#FFF7E8',
+    borderWidth: 1,
+    borderColor: '#E8C77E',
+    padding: 13,
+    marginBottom: 14,
+  },
+
+  demoDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    backgroundColor: '#D48A17',
+    marginTop: 4,
+    marginRight: 10,
+  },
+
+  demoTitle: {
+    color: '#704A0C',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+
+  demoBody: {
+    color: '#826329',
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 2,
+  },
+
+  heroCard: {
+    borderRadius: 22,
+    padding: 22,
+    marginBottom: 14,
+    borderWidth: 1,
+  },
+
+  heroGood: {
+    backgroundColor: '#0E5C4C',
+    borderColor: '#0E5C4C',
+  },
+
+  heroWarning: {
+    backgroundColor: '#8A3E2C',
+    borderColor: '#8A3E2C',
+  },
+
+  heroNeutral: {
+    backgroundColor: '#18324B',
+    borderColor: '#18324B',
+  },
+
+  heroLabel: {
+    color: '#CFE0EA',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+  },
+
+  heroState: {
+    color: '#FFFFFF',
+    fontSize: 31,
+    fontWeight: '900',
+    marginTop: 5,
+  },
+
+  heroDirection: {
+    color: '#E3EDF3',
+    fontSize: 14,
+    marginTop: 4,
+  },
+
+  heroMetrics: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 24,
+    marginBottom: 17,
+  },
+
+  heroMetric: {
+    flex: 1,
+  },
+
+  heroMetricLabel: {
+    color: '#CFE0EA',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  heroMetricValue: {
+    color: '#FFFFFF',
+    fontSize: 27,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+
+  heroDivider: {
+    width: 1,
+    height: 42,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    marginHorizontal: 18,
+  },
+
+  heroExplanation: {
+    color: '#E3EDF3',
+    fontSize: 13,
+    lineHeight: 19,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.18)',
+    paddingTop: 14,
+  },
+
+  sectionCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 18,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#E0E7EE',
+    elevation: 1,
+  },
+
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+  },
+
+  sectionTitle: {
+    color: '#132238',
+    fontSize: 19,
+    fontWeight: '800',
+  },
+
+  sectionCaption: {
+    color: '#6A7A8C',
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 4,
+    paddingRight: 8,
+  },
+
+  orientationLayout: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+
+  orientationVisual: {
+    width: 118,
+    height: 118,
+    borderRadius: 59,
+    backgroundColor: '#F2F6FA',
+    borderWidth: 1,
+    borderColor: '#D8E2EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+
+  orientationCrossHorizontal: {
+    position: 'absolute',
+    width: 88,
+    height: 1,
+    backgroundColor: '#D4DEE7',
+  },
+
+  orientationCrossVertical: {
+    position: 'absolute',
+    width: 1,
+    height: 88,
+    backgroundColor: '#D4DEE7',
+  },
+
+  orientationIndicator: {
+    width: 78,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: '#173F67',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  orientationIndicatorLine: {
+    width: 46,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: '#8CD5C4',
+  },
+
+  orientationValues: {
+    flex: 1,
+  },
+
+  subtlePanel: {
+    backgroundColor: '#F7F9FB',
+    borderRadius: 12,
+    padding: 13,
+    marginTop: 14,
+  },
+
+  subtlePanelTitle: {
+    color: '#41566B',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+    marginBottom: 8,
+  },
+
+  twoColumnMetrics: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+
+  compactMetric: {
+    flexGrow: 1,
+    flexBasis: '46%',
+    minWidth: 126,
+    backgroundColor: '#F7F9FB',
+    borderRadius: 10,
+    padding: 11,
+  },
+
+  compactMetricLabel: {
+    color: '#748394',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+
+  compactMetricValue: {
+    color: '#19334D',
+    fontSize: 15,
+    fontWeight: '800',
+    marginTop: 3,
+  },
+
+  metricRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    gap: 12,
+    paddingVertical: 4,
+  },
+
+  metricLabel: {
+    color: '#718092',
+    fontSize: 12,
+    flex: 1,
+  },
+
+  metricValue: {
+    color: '#1B344D',
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'right',
+  },
+
+  axisGrid: {
+    gap: 10,
+  },
+
+  axisPanel: {
+    backgroundColor: '#F7F9FB',
+    borderRadius: 13,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E5EBF0',
+  },
+
+  axisHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+
+  axisTitle: {
+    color: '#19334D',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+
+  axisState: {
+    borderRadius: 20,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+  },
+
+  axisStateInside: {
+    backgroundColor: '#DDEFE9',
+  },
+
+  axisStateOutside: {
+    backgroundColor: '#F7DDD5',
+  },
+
+  axisStateText: {
+    color: '#344A5F',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+
+  axisDeviationValue: {
+    color: '#132238',
+    fontSize: 28,
+    fontWeight: '900',
+    marginTop: 10,
+  },
+
+  axisDeviationLabel: {
+    color: '#718092',
+    fontSize: 11,
+    marginBottom: 10,
+  },
+
+  thresholdStack: {
+    borderTopWidth: 1,
+    borderTopColor: '#E1E8EE',
+    paddingTop: 8,
+  },
+
+  legendRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 7,
+    marginTop: 12,
+  },
+
+  legendSwatch: {
+    width: 14,
+    height: 3,
+    borderRadius: 2,
+  },
+
+  canonicalSwatch: {
+    backgroundColor: '#8292A3',
+  },
+
+  effectiveSwatch: {
+    backgroundColor: '#217A68',
+  },
+
+  legendText: {
+    color: '#6C7C8D',
+    fontSize: 10,
+    marginRight: 5,
+  },
+
+  deviationSummary: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+  },
+
+  signalGrid: {
+    gap: 10,
+  },
+
+  signalPanel: {
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: '#E3E9EF',
+    padding: 14,
+  },
+
+  signalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+
+  signalTitle: {
+    color: '#1A334C',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+
+  signalStatus: {
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+
+  signalStatusGood: {
+    backgroundColor: '#DDEFE9',
+  },
+
+  signalStatusWarning: {
+    backgroundColor: '#FFF0D9',
+  },
+
+  signalStatusNeutral: {
+    backgroundColor: '#EDF1F5',
+  },
+
+  signalStatusText: {
+    color: '#344A5F',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+
+  progressLabel: {
+    color: '#718092',
+    fontSize: 11,
+    marginTop: 9,
+    marginBottom: 6,
+  },
+
+  progressTrack: {
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#E7EDF2',
+    overflow: 'hidden',
+  },
+
+  progressFill: {
+    height: '100%',
+    borderRadius: 4,
+    backgroundColor: '#287B69',
+  },
+
+  progressFillWarning: {
+    backgroundColor: '#D27B2C',
+  },
+
+  microcopy: {
+    color: '#728294',
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 8,
+  },
+
+  feedbackHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 12,
+  },
+
+  fieldLabel: {
+    color: '#718092',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+
+  feedbackActive: {
+    color: '#B34A31',
+    fontSize: 23,
+    fontWeight: '900',
+    marginTop: 2,
+  },
+
+  feedbackInactive: {
+    color: '#1B705D',
+    fontSize: 23,
+    fontWeight: '900',
+    marginTop: 2,
+  },
+
+  emptyText: {
+    color: '#758597',
+    fontSize: 12,
+  },
+
+  modeBadge: {
+    backgroundColor: '#FFF0CE',
+    borderRadius: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+  },
+
+  modeBadgeText: {
+    color: '#7C570F',
+    fontSize: 10,
+    fontWeight: '900',
+  },
+
+  adaptiveAxisPanel: {
+    borderTopWidth: 1,
+    borderTopColor: '#E4EAF0',
+    paddingTop: 14,
+    marginTop: 4,
+    marginBottom: 20,
+  },
+
+  adaptiveAxisHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 13,
+  },
+
+  adaptiveAxisTitle: {
+    color: '#17324B',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+
+  adaptiveAxisAdjustment: {
+    color: '#246B5D',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+
+  subsectionLabel: {
+    color: '#687A8D',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+    marginBottom: 9,
+    marginTop: 3,
+  },
+
+  featureRow: {
+    marginBottom: 12,
+  },
+
+  featureLabelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 5,
+  },
+
+  featureLabel: {
+    color: '#344B61',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  featureValue: {
+    color: '#173F67',
+    fontSize: 12,
+    fontWeight: '900',
+    fontVariant: ['tabular-nums'],
+  },
+
+  featureEmaText: {
+    color: '#8090A0',
+    fontSize: 10,
+    marginTop: 4,
+    fontVariant: ['tabular-nums'],
+  },
+
+  evidencePanel: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 5,
+    marginBottom: 16,
+  },
+
+  safetyGrid: {
+    gap: 7,
+  },
+
+  safetyGate: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 9,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderWidth: 1,
+  },
+
+  safetyGateAllow: {
+    backgroundColor: '#F0F8F5',
+    borderColor: '#CEE7DE',
+  },
+
+  safetyGateBlock: {
+    backgroundColor: '#FFF4EF',
+    borderColor: '#F0D4C9',
+  },
+
+  safetyDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+
+  safetyDotAllow: {
+    backgroundColor: '#287B69',
+  },
+
+  safetyDotBlock: {
+    backgroundColor: '#C45B40',
+  },
+
+  safetyGateLabel: {
+    flex: 1,
+    color: '#344B61',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  safetyGateValue: {
+    color: '#536779',
+    fontSize: 10,
+    fontWeight: '900',
+  },
+
+  freezeWarning: {
+    color: '#9B432F',
+    backgroundColor: '#FFF2ED',
+    borderRadius: 9,
+    padding: 10,
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 9,
+  },
+
+  freezeReady: {
+    color: '#1F6758',
+    backgroundColor: '#EEF8F4',
+    borderRadius: 9,
+    padding: 10,
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 9,
+  },
+
+  adaptationSummary: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+
+  runtimeGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+
+  rawSensorPanel: {
+    backgroundColor: '#152A3E',
+    borderRadius: 12,
+    padding: 13,
+    marginTop: 12,
+  },
+
+  rawSensorText: {
+    color: '#C7D6E3',
+    fontSize: 11,
+    lineHeight: 18,
+    fontFamily: 'monospace',
+  },
+
+  rawSensorTitle: {
+    color: '#E4EDF4',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+    marginBottom: 8,
+  },
+
+  sessionControlCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#EAF2F8',
+    borderWidth: 1,
+    borderColor: '#C9DCEB',
+    borderRadius: 16,
+    padding: 15,
+    marginBottom: 14,
+  },
+
+  sessionControlTitle: {
+    color: '#17344E',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+
+  sessionControlBody: {
+    color: '#637789',
+    fontSize: 11,
+    marginTop: 3,
+  },
+
+  stopButton: {
+    backgroundColor: '#9E412E',
+    borderRadius: 10,
+    paddingHorizontal: 13,
+    paddingVertical: 11,
+  },
+
+  stopButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+
+  buttonPressed: {
+    opacity: 0.8,
   },
 
 });

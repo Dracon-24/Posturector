@@ -458,4 +458,8 @@ test('recalibration guard and reset path preserve lifecycle safety without chang
   assert.match(appSource, /adaptiveThresholdMode:/);
   assert.match(appSource, /adaptiveThresholdController\.getMode\(\)/);
   assert.match(appSource, /adaptiveFeedbackController\.getState\(\)\.mode/);
+  assert.match(appSource, /const DASHBOARD_UPDATE_INTERVAL = 200;/);
+  assert.match(appSource, /Adaptive Threshold Internals/);
+  assert.match(appSource, /TEMPORARY REVIEW DEMO CONFIGURATION|accelerated adaptive timing/);
+  assert.match(appSource, /getAdaptiveFreezeReasons/);
 });

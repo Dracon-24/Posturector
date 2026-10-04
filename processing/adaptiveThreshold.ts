@@ -1,5 +1,6 @@
 import {
     AxisBehaviorFeatureExtractor,
+    BehavioralFeatureEmaValues,
     CorrectionTrendFeature,
     NormalizedBehavioralFeatures,
     TimeAwareEma,
@@ -32,6 +33,7 @@ export interface AdaptiveThresholdState {
 
 export interface AxisAdaptiveThresholdDiagnostics {
     features: NormalizedBehavioralFeatures;
+    featureEmaValues: BehavioralFeatureEmaValues;
     combinedEvidence: number;
     evidenceEma: number;
     dataSufficient: boolean;
@@ -58,9 +60,34 @@ function emptyFeatures(): NormalizedBehavioralFeatures {
     };
 }
 
+function emptyFeatureEmaValues(): BehavioralFeatureEmaValues {
+    const emptyValue = () => ({ shortTerm: 0, longTerm: 0 });
+
+    return {
+        deviation: emptyValue(),
+        frequency: emptyValue(),
+        correction: emptyValue(),
+        goodPostureDuration: emptyValue(),
+        nearThreshold: emptyValue(),
+    };
+}
+
+function cloneFeatureEmaValues(
+    values: BehavioralFeatureEmaValues
+): BehavioralFeatureEmaValues {
+    return {
+        deviation: { ...values.deviation },
+        frequency: { ...values.frequency },
+        correction: { ...values.correction },
+        goodPostureDuration: { ...values.goodPostureDuration },
+        nearThreshold: { ...values.nearThreshold },
+    };
+}
+
 function emptyAxisDiagnostics(): AxisAdaptiveThresholdDiagnostics {
     return {
         features: emptyFeatures(),
+        featureEmaValues: emptyFeatureEmaValues(),
         combinedEvidence: 0,
         evidenceEma: 0,
         dataSufficient: false,
@@ -132,10 +159,16 @@ export class AdaptiveThresholdController {
             pitch: {
                 ...this.diagnostics.pitch,
                 features: { ...this.diagnostics.pitch.features },
+                featureEmaValues: cloneFeatureEmaValues(
+                    this.diagnostics.pitch.featureEmaValues
+                ),
             },
             roll: {
                 ...this.diagnostics.roll,
                 features: { ...this.diagnostics.roll.features },
+                featureEmaValues: cloneFeatureEmaValues(
+                    this.diagnostics.roll.featureEmaValues
+                ),
             },
         };
     }
@@ -179,6 +212,7 @@ export class AdaptiveThresholdController {
 
         const observationDuration = Math.max(0, sample.timestamp - this.sessionStartTimestamp);
         const correctionResponseCount = this.correctionTrend.getCount();
+        const correctionEmaValue = this.correctionTrend.getEmaValue();
         const commonDataSufficient =
             observationDuration >= this.config.minimumObservationDuration &&
             this.validSampleCount >= this.config.minimumValidSamples &&
@@ -186,6 +220,7 @@ export class AdaptiveThresholdController {
 
         const pitchDiagnostics = this.buildAxisDiagnostics(
             pitchFeatures,
+            this.pitchFeatures.getEmaValues(correctionEmaValue),
             pitchCombined,
             pitchEvidence,
             commonDataSufficient &&
@@ -197,6 +232,7 @@ export class AdaptiveThresholdController {
         );
         const rollDiagnostics = this.buildAxisDiagnostics(
             rollFeatures,
+            this.rollFeatures.getEmaValues(correctionEmaValue),
             rollCombined,
             rollEvidence,
             commonDataSufficient &&
@@ -250,6 +286,7 @@ export class AdaptiveThresholdController {
 
     private buildAxisDiagnostics(
         features: NormalizedBehavioralFeatures,
+        featureEmaValues: BehavioralFeatureEmaValues,
         combinedEvidence: number,
         evidenceEma: number,
         dataSufficient: boolean,
@@ -259,6 +296,7 @@ export class AdaptiveThresholdController {
     ): AxisAdaptiveThresholdDiagnostics {
         return {
             features,
+            featureEmaValues,
             combinedEvidence,
             evidenceEma,
             dataSufficient,

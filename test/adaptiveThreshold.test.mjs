@@ -132,6 +132,22 @@ test('time-aware EMA initializes safely, follows elapsed time, and remains bound
   assert.equal(ema.getValue(), 0);
 });
 
+test('read-only diagnostics expose the existing short-term and long-term feature EMAs', () => {
+  const adaptive = createAdaptiveController();
+  establishMeaningfulHistory(adaptive);
+  const diagnostics = adaptive.getDiagnostics().pitch;
+
+  for (const emaValue of Object.values(diagnostics.featureEmaValues)) {
+    assert.ok(emaValue.shortTerm >= 0 && emaValue.shortTerm <= 1);
+    assert.ok(emaValue.longTerm >= 0 && emaValue.longTerm <= 1);
+  }
+
+  assert.equal(
+    diagnostics.featureEmaValues.correction.shortTerm,
+    adaptive.getDiagnostics().roll.featureEmaValues.correction.shortTerm
+  );
+});
+
 test('new session starts and resets with zero independent adjustments and EMA', () => {
   const adaptive = createAdaptiveController();
   assert.deepEqual(adaptive.getState(), { pitchAdjustment: 0, rollAdjustment: 0 });

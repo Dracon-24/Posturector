@@ -16,6 +16,19 @@ export interface NormalizedBehavioralFeatures {
     nearThresholdExposure: number;
 }
 
+export interface BehavioralFeatureEmaValue {
+    shortTerm: number;
+    longTerm: number;
+}
+
+export interface BehavioralFeatureEmaValues {
+    deviation: BehavioralFeatureEmaValue;
+    frequency: BehavioralFeatureEmaValue;
+    correction: BehavioralFeatureEmaValue;
+    goodPostureDuration: BehavioralFeatureEmaValue;
+    nearThreshold: BehavioralFeatureEmaValue;
+}
+
 export function clamp01(value: number): number {
     if (!Number.isFinite(value)) {
         return 0;
@@ -145,6 +158,13 @@ class TrendPair {
         return normalizeDecliningTrend(this.shortTerm.getValue(), this.longTerm.getValue());
     }
 
+    getValues(): BehavioralFeatureEmaValue {
+        return {
+            shortTerm: this.shortTerm.getValue(),
+            longTerm: this.longTerm.getValue(),
+        };
+    }
+
     reset(): void {
         this.shortTerm.reset();
         this.longTerm.reset();
@@ -175,6 +195,10 @@ export class CorrectionTrendFeature {
 
     getCount(): number {
         return this.responseCount;
+    }
+
+    getEmaValue(): BehavioralFeatureEmaValue {
+        return this.trend.getValues();
     }
 
     reset(): void {
@@ -236,6 +260,18 @@ export class AxisBehaviorFeatureExtractor {
 
     getGoodPosturePeriodCount(): number {
         return this.goodPosturePeriodCount;
+    }
+
+    getEmaValues(
+        correction: BehavioralFeatureEmaValue
+    ): BehavioralFeatureEmaValues {
+        return {
+            deviation: this.deviation.getValues(),
+            frequency: this.frequency.getValues(),
+            correction,
+            goodPostureDuration: this.goodPostureDuration.getValues(),
+            nearThreshold: this.nearThreshold.getValues(),
+        };
     }
 
     reset(): void {

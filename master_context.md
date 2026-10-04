@@ -1874,6 +1874,8 @@ monitoringActive lifecycle
 historical analytics state and UI
 startup/manual/post-upload analytics loading
 coalesced trailing-refresh coordination
+finalized engineering monitoring dashboard
+throttled adaptive/runtime dashboard snapshot
 ```
 
 It imports session upload and historical analytics functions/types from:
@@ -1900,6 +1902,42 @@ Historical analytics is rendered after completed-session Performance
 Metrics and before calibration controls. It is hidden during calibration
 and active monitoring so it remains supplementary to the real-time
 workflow.
+
+## Finalized real-time monitoring dashboard
+
+The application shell and real-time monitoring surface are implemented
+as a presentation-ready engineering dashboard. It retains direct access
+to the internal mechanism for project review and validation rather than
+hiding it behind consumer-oriented summaries.
+
+The dashboard presents:
+
+``` text
+application lifecycle, sensor, calibration, and upload status
+temporary DEMO adaptive-timing identification
+current posture, direction, pitch, and roll
+live orientation indicator and personalized baselines
+canonical versus effective thresholds and axis status
+stability and persistence state/progress
+haptic feedback and correction-response state
+latest completed correction
+all five normalized adaptive behavioral features
+per-feature short-term and long-term EMA values
+combined evidence and evidence EMA
+pitch/roll adaptive adjustments and +3° bound
+actual adaptive safety-gate states and freeze reasons
+sampling rate, elapsed session time, and raw IMU telemetry
+```
+
+The processing controller exposes the already-computed per-feature EMA
+values through its read-only diagnostics snapshot. This is state
+exposure only: feature definitions, normalization, weighting, EMA
+updates, safety gates, and threshold behavior are unchanged.
+
+Dashboard-specific adaptive/runtime state is copied to React state at a
+maximum of five updates per second. The underlying sensor and processing
+pipeline continues at its existing cadence; the dashboard does not
+recalculate posture-processing results.
 
 ------------------------------------------------------------------------
 
@@ -2708,16 +2746,18 @@ active adaptive-threshold mode (`DEMO` during the temporary review configuration
 adaptive-feedback mode
 ```
 
-This diagnostic is guarded by Expo/React Native's `__DEV__` flag and is
-not rendered as permanent production UI. The five-second throttle keeps
-logging outside the approximately 50 Hz sensor-processing path. Its
+This console diagnostic is guarded by Expo/React Native's `__DEV__` flag.
+The engineering dashboard separately presents the relevant live runtime
+state without exposing the console snapshot itself. The five-second
+console throttle keeps logging outside the approximately 50 Hz
+sensor-processing path. Its
 session-local timer resets at successful calibration, monitoring stop,
 recalibration, and component cleanup.
 
-The existing UI already displays live raw accelerometer/gyroscope data,
-body pitch/roll, personalized deviations and thresholds, stability,
-persistence, feedback, correction state, completed-session metrics, and
-the final measured sampling rate. Physical-device observations still
+The engineering UI displays live raw accelerometer/gyroscope data, body
+pitch/roll, personalized and adaptive threshold state, stability,
+persistence, feedback, correction state, adaptive diagnostics,
+completed-session metrics, and measured sampling rate. Physical-device observations still
 require a connected device and controlled human validation; automated
 tests do not establish real-world orientation, mounting, comfort, or
 haptic perception.
