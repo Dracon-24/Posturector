@@ -86,8 +86,10 @@ import {
 import {
   HistoricalSummary,
   HistoricalTrends,
+  SessionUpload,
   fetchHistoricalSummary,
   fetchHistoricalTrends,
+  fetchSessionById,
   SessionUploadError,
   uploadSession,
 } from './services/apiService';
@@ -188,6 +190,11 @@ type SessionUploadState =
   | 'failed'
   | 'possibly-saved';
 
+type AppView =
+  | 'monitor'
+  | 'results'
+  | 'history';
+
 interface DashboardRuntimeState {
   direction: PostureDirection;
   adaptiveDiagnostics: AdaptiveThresholdDiagnostics;
@@ -242,6 +249,18 @@ export default function App() {
 
   const [sessionUploadState, setSessionUploadState] =
     useState<SessionUploadState>('idle');
+
+  const [activeView, setActiveView] =
+    useState<AppView>('monitor');
+
+  const [historicalSessionDetail, setHistoricalSessionDetail] =
+    useState<SessionUpload | null>(null);
+
+  const [historicalSessionLoading, setHistoricalSessionLoading] =
+    useState(false);
+
+  const [historicalSessionError, setHistoricalSessionError] =
+    useState<string | null>(null);
 
 
   // =====================================
@@ -362,6 +381,9 @@ export default function App() {
 
   const pendingUploadMetricsRef =
     useRef<PerformanceMetrics | null>(null);
+
+  const historicalSessionLoadingRef =
+    useRef(false);
 
 
   // =====================================
@@ -642,6 +664,72 @@ export default function App() {
       completedSession,
       metrics
     );
+  };
+
+
+  const openHistoricalSession = async (id: string) => {
+
+    if (historicalSessionLoadingRef.current) {
+      return;
+    }
+
+    historicalSessionLoadingRef.current =
+      true;
+
+    setHistoricalSessionLoading(
+      true
+    );
+
+    setHistoricalSessionError(
+      null
+    );
+
+    try {
+
+      const storedSession =
+        await fetchSessionById(id);
+
+      if (storedSession.id !== id) {
+        throw new Error('Stored session ID mismatch');
+      }
+
+      if (!appMountedRef.current) {
+        return;
+      }
+
+      setHistoricalSessionDetail(
+        storedSession
+      );
+
+      setActiveView(
+        'results'
+      );
+
+    } catch (error) {
+
+      console.error(
+        'Historical session loading failed:',
+        error
+      );
+
+      if (appMountedRef.current) {
+        setHistoricalSessionError(
+          'Unable to open this completed session.'
+        );
+      }
+
+    } finally {
+
+      historicalSessionLoadingRef.current =
+        false;
+
+      if (appMountedRef.current) {
+        setHistoricalSessionLoading(
+          false
+        );
+      }
+
+    }
   };
 
 
@@ -1502,6 +1590,10 @@ export default function App() {
       return;
     }
 
+    if (calibrationActive.current) {
+      return;
+    }
+
     if (pendingUploadSessionRef.current !== null) {
       return;
     }
@@ -1611,6 +1703,17 @@ export default function App() {
       null
     );
 
+    setDashboardRuntime({
+      direction: 'neutral',
+      adaptiveDiagnostics:
+        adaptiveThresholdController.getDiagnostics(),
+      adaptiveAdjustment:
+        adaptiveThresholdController.getState(),
+      overallDeviation: 0,
+      samplingRate: 0,
+      monitoredDuration: 0,
+    });
+
 
     // ---------------------------------
     // Reset correction event tracking
@@ -1670,6 +1773,10 @@ export default function App() {
 
     setIsCalibrating(
       true
+    );
+
+    setActiveView(
+      'monitor'
     );
   };
 
@@ -1750,6 +1857,17 @@ export default function App() {
       null
     );
 
+    setDashboardRuntime({
+      direction: 'neutral',
+      adaptiveDiagnostics:
+        adaptiveThresholdController.getDiagnostics(),
+      adaptiveAdjustment:
+        adaptiveThresholdController.getState(),
+      overallDeviation: 0,
+      samplingRate: 0,
+      monitoredDuration: 0,
+    });
+
     const newSession =
       startSession(currentCalibration);
 
@@ -1770,6 +1888,14 @@ export default function App() {
 
     monitoringActive.current =
       true;
+
+    setHistoricalSessionDetail(
+      null
+    );
+
+    setActiveView(
+      'monitor'
+    );
 
   };
 
@@ -1881,6 +2007,14 @@ export default function App() {
       metrics
     );
 
+    setHistoricalSessionDetail(
+      null
+    );
+
+    setActiveView(
+      'results'
+    );
+
 
     // =================================
     // UPLOAD SESSION TO BACKEND
@@ -1961,7 +2095,7 @@ export default function App() {
       : monitoring
         ? 'MONITORING'
         : sessionUploadActiveRef.current
-          ? 'FINALIZING'
+          ? 'SYNCING RESULT'
           : calibrated
             ? 'CALIBRATED IDLE'
             : 'UNCALIBRATED';
@@ -2011,6 +2145,43 @@ export default function App() {
   const sensorActive =
     imuData.timestamp > 0;
 
+  const displayedResult =
+    historicalSessionDetail ??
+    (
+      session !== null &&
+      performanceMetrics !== null &&
+      session.endTime !== null
+        ? {
+          ...session,
+          metrics: performanceMetrics,
+        }
+        : null
+    );
+
+  const openLatestResult = () => {
+    if (
+      session === null ||
+      performanceMetrics === null ||
+      session.endTime === null
+    ) {
+      if (historicalSessionDetail !== null) {
+        setActiveView(
+          'results'
+        );
+      }
+
+      return;
+    }
+
+    setHistoricalSessionDetail(
+      null
+    );
+
+    setActiveView(
+      'results'
+    );
+  };
+
   return (
 
     <ScrollView
@@ -2055,7 +2226,7 @@ export default function App() {
         {sessionUploadState !== 'idle' && (
           <StatusPill
             label="Session storage"
-            value={sessionUploadState.replace('-', ' ').toUpperCase()}
+            value={formatSessionStorageState(sessionUploadState)}
             tone={
               sessionUploadState === 'saved'
                 ? 'good'
@@ -2081,8 +2252,28 @@ export default function App() {
         </View>
       </View>
 
+      <View style={styles.navigationBar}>
+        <NavigationButton
+          label="Monitor"
+          active={activeView === 'monitor'}
+          onPress={() => setActiveView('monitor')}
+        />
+        <NavigationButton
+          label="Session Results"
+          active={activeView === 'results'}
+          disabled={monitoring || isCalibrating || displayedResult === null}
+          onPress={openLatestResult}
+        />
+        <NavigationButton
+          label="History"
+          active={activeView === 'history'}
+          disabled={monitoring || isCalibrating}
+          onPress={() => setActiveView('history')}
+        />
+      </View>
 
-      {(performanceMetrics === null || monitoring) && (
+
+      {activeView === 'monitor' && (
         <>
 
       {/* CURRENT POSTURE */}
@@ -2453,25 +2644,29 @@ export default function App() {
       ================================= */}
 
       {
-        performanceMetrics !== null &&
-        session !== null &&
-        session.endTime !== null && (
+        activeView === 'results' &&
+        displayedResult !== null && (
 
           <SessionResultsDashboard
-            session={session}
-            metrics={performanceMetrics}
-            uploadState={sessionUploadState}
+            session={displayedResult}
+            metrics={displayedResult.metrics}
+            uploadState={historicalSessionDetail === null ? sessionUploadState : 'saved'}
             adaptiveMode={adaptiveThresholdController.getMode()}
             canonicalPitchThreshold={
               MINIMUM_THRESHOLD +
-              VARIABILITY_FACTOR * session.calibration.pitchStd
+              VARIABILITY_FACTOR * displayedResult.calibration.pitchStd
             }
             canonicalRollThreshold={
               MINIMUM_THRESHOLD +
-              VARIABILITY_FACTOR * session.calibration.rollStd
+              VARIABILITY_FACTOR * displayedResult.calibration.rollStd
             }
             onRetryUpload={retrySessionUpload}
             onStartNewSession={startMonitoring}
+            canStartNewSession={
+              calibrated &&
+              !sessionUploadActiveRef.current &&
+              pendingUploadSessionRef.current === null
+            }
           />
 
         )
@@ -2485,8 +2680,8 @@ export default function App() {
       ================================= */}
 
       {
-        !isCalibrating &&
-        !monitoringActive.current && (
+        activeView === 'history' &&
+        !isCalibrating && (
 
           <HistoricalAnalyticsDashboard
             summary={historicalSummary}
@@ -2497,6 +2692,11 @@ export default function App() {
             onRefresh={() => {
               void loadHistoricalAnalytics();
             }}
+            onOpenSession={(id) => {
+              void openHistoricalSession(id);
+            }}
+            sessionDetailLoading={historicalSessionLoading}
+            sessionDetailError={historicalSessionError}
           />
 
         )
@@ -2507,11 +2707,37 @@ export default function App() {
           CALIBRATION
       ================================= */}
 
+      {activeView === 'monitor' && (
       <View style={styles.calibrationCard}>
 
-        <Text style={styles.heading}>
-          Personalized Calibration
-        </Text>
+        <View style={styles.calibrationHeader}>
+          <View style={styles.flexOne}>
+            <Text style={styles.heading}>
+              Personalized Calibration
+            </Text>
+            <Text style={styles.calibrationCaption}>
+              Establishes your natural comfortable upright baseline.
+            </Text>
+          </View>
+          <View style={[
+            styles.calibrationBadge,
+            calibrated
+              ? styles.calibrationBadgeReady
+              : isCalibrating
+                ? styles.calibrationBadgeActive
+                : styles.calibrationBadgeNeutral,
+          ]}>
+            <Text style={styles.calibrationBadgeText}>
+              {monitoring
+                ? 'MONITORING'
+                : calibrated
+                  ? 'CALIBRATED — READY'
+                  : isCalibrating
+                    ? 'CALIBRATING'
+                    : 'CALIBRATION REQUIRED'}
+            </Text>
+          </View>
+        </View>
 
 
         {/* ---------------------------------
@@ -2704,9 +2930,17 @@ export default function App() {
               {
                 !calibrationResult.valid && (
 
-                  <Text style={styles.warning}>
-                    {calibrationResult.reason}
-                  </Text>
+                  <View style={styles.calibrationFailureCard}>
+                    <Text style={styles.calibrationFailureTitle}>
+                      Calibration could not be validated
+                    </Text>
+                    <Text style={styles.calibrationFailureBody}>
+                      {formatCalibrationFailure(calibrationResult)}
+                    </Text>
+                    <Text style={styles.calibrationFailureInstruction}>
+                      Secure the phone, remain comfortably upright, and stay reasonably still before trying again.
+                    </Text>
+                  </View>
 
                 )
               }
@@ -2721,7 +2955,11 @@ export default function App() {
                   <>
 
                     <Text style={styles.goodStatus}>
-                      Calibration remains active.
+                      CALIBRATED — READY
+                    </Text>
+
+                    <Text style={styles.readyBody}>
+                      Your valid calibration is retained. Start a fresh monitoring session when ready.
                     </Text>
 
 
@@ -2743,6 +2981,50 @@ export default function App() {
 
 
               {
+                calibrationResult.valid &&
+                monitoringActive.current && (
+
+                  <View style={styles.monitoringCalibrationNotice}>
+                    <Text style={styles.monitoringCalibrationTitle}>
+                      Calibration locked during monitoring
+                    </Text>
+                    <Text style={styles.monitoringCalibrationBody}>
+                      Stop monitoring before recalibrating. Your current baseline remains active for this session.
+                    </Text>
+                  </View>
+
+                )
+              }
+
+
+              {
+                calibrationResult.valid &&
+                !monitoringActive.current &&
+                pendingUploadSessionRef.current !== null && (
+
+                  <View style={styles.pendingSessionNotice}>
+                    <Text style={styles.pendingSessionTitle}>
+                      Complete the current session sync first
+                    </Text>
+                    <Text style={styles.pendingSessionBody}>
+                      {sessionUploadState === 'uploading'
+                        ? 'The finalized session is currently syncing. Its results remain available.'
+                        : 'The finalized session is retained for retry. Open Session Results to retry sync.'}
+                    </Text>
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={openLatestResult}
+                      style={({ pressed }) => [styles.pendingSessionButton, pressed && styles.buttonPressed]}
+                    >
+                      <Text style={styles.pendingSessionButtonText}>View Session Results</Text>
+                    </Pressable>
+                  </View>
+
+                )
+              }
+
+
+              {
                 !monitoringActive.current &&
                 pendingUploadSessionRef.current === null && (
 
@@ -2751,9 +3033,9 @@ export default function App() {
                     onPress={startCalibration}
                   >
 
-                    <Text style={styles.buttonText}>
-                      Calibrate Again
-                    </Text>
+                      <Text style={styles.buttonText}>
+                      {calibrationResult.valid ? 'Recalibrate' : 'Try Again'}
+                      </Text>
 
                   </Pressable>
 
@@ -2766,6 +3048,7 @@ export default function App() {
         }
 
       </View>
+      )}
 
 
       {/* =================================
@@ -2803,6 +3086,74 @@ type StatusTone =
   | 'good'
   | 'active'
   | 'warning';
+
+function NavigationButton({
+  label,
+  active,
+  disabled = false,
+  onPress,
+}: {
+  label: string;
+  active: boolean;
+  disabled?: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="tab"
+      accessibilityState={{ selected: active, disabled }}
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.navigationButton,
+        active && styles.navigationButtonActive,
+        disabled && styles.navigationButtonDisabled,
+        pressed && !disabled && styles.buttonPressed,
+      ]}
+    >
+      <Text style={[
+        styles.navigationButtonText,
+        active && styles.navigationButtonTextActive,
+      ]}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+function formatCalibrationFailure(result: CalibrationResult): string {
+  if (result.reason === 'Not enough samples') {
+    return `Only ${result.sampleCount} samples were recorded; at least 100 are required.`;
+  }
+
+  if (result.reason === 'Too much movement during calibration') {
+    const unstableAxes: string[] = [];
+
+    if (result.pitchStd > 4) {
+      unstableAxes.push(`pitch variability was ${result.pitchStd.toFixed(2)}°`);
+    }
+
+    if (result.rollStd > 4) {
+      unstableAxes.push(`roll variability was ${result.rollStd.toFixed(2)}°`);
+    }
+
+    return unstableAxes.length > 0
+      ? `Too much movement was detected: ${unstableAxes.join(' and ')}. The engineering limit is 4.00° per axis.`
+      : 'Too much movement was detected during calibration.';
+  }
+
+  return result.reason ?? 'The calibration result was not valid.';
+}
+
+function formatSessionStorageState(state: SessionUploadState): string {
+  switch (state) {
+    case 'uploading': return 'SYNCING';
+    case 'saved': return 'SYNCED';
+    case 'failed': return 'SYNC UNAVAILABLE';
+    case 'possibly-saved': return 'MAY ALREADY BE SYNCED';
+    case 'idle': return 'LOCAL';
+  }
+}
 
 function SectionCard({
   title,
@@ -3214,6 +3565,45 @@ const styles = StyleSheet.create({
     backgroundColor: '#F3F6F9',
   },
 
+  navigationBar: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#DDE5EC',
+    padding: 4,
+    marginBottom: 14,
+    gap: 4,
+  },
+
+  navigationButton: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 5,
+  },
+
+  navigationButtonActive: {
+    backgroundColor: '#173F67',
+  },
+
+  navigationButtonDisabled: {
+    opacity: 0.38,
+  },
+
+  navigationButtonText: {
+    color: '#526476',
+    fontSize: 11,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+
+  navigationButtonTextActive: {
+    color: '#FFFFFF',
+  },
+
 
   title: {
     fontSize: 24,
@@ -3248,6 +3638,142 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     borderWidth: 1,
     borderColor: '#E4EAF0',
+  },
+
+  calibrationHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginBottom: 14,
+  },
+
+  calibrationCaption: {
+    color: '#657486',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+
+  calibrationBadge: {
+    borderRadius: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    maxWidth: 126,
+  },
+
+  calibrationBadgeReady: {
+    backgroundColor: '#DDF1EA',
+  },
+
+  calibrationBadgeActive: {
+    backgroundColor: '#DDEAF5',
+  },
+
+  calibrationBadgeNeutral: {
+    backgroundColor: '#EDF1F4',
+  },
+
+  calibrationBadgeText: {
+    color: '#28465F',
+    fontSize: 9,
+    lineHeight: 12,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+
+  calibrationFailureCard: {
+    backgroundColor: '#FFF3EF',
+    borderColor: '#EDC8BC',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 13,
+    marginTop: 10,
+  },
+
+  calibrationFailureTitle: {
+    color: '#8E3F2D',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+
+  calibrationFailureBody: {
+    color: '#7A5148',
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 4,
+  },
+
+  calibrationFailureInstruction: {
+    color: '#684B44',
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '700',
+    marginTop: 8,
+  },
+
+  readyBody: {
+    color: '#4F6F66',
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 4,
+  },
+
+  monitoringCalibrationNotice: {
+    backgroundColor: '#EDF4FA',
+    borderColor: '#C8DBEC',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 12,
+  },
+
+  monitoringCalibrationTitle: {
+    color: '#234F73',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+
+  monitoringCalibrationBody: {
+    color: '#557086',
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 3,
+  },
+
+  pendingSessionNotice: {
+    backgroundColor: '#FFF7E8',
+    borderColor: '#E8D3A8',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 12,
+  },
+
+  pendingSessionTitle: {
+    color: '#76501F',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+
+  pendingSessionBody: {
+    color: '#766044',
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 3,
+  },
+
+  pendingSessionButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#76501F',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginTop: 10,
+  },
+
+  pendingSessionButtonText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
   },
 
 

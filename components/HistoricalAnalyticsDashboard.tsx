@@ -19,6 +19,9 @@ interface HistoricalAnalyticsDashboardProps {
   error: string | null;
   adaptiveMode: 'PRODUCTION' | 'DEMO';
   onRefresh: () => void;
+  onOpenSession: (id: string) => void;
+  sessionDetailLoading: boolean;
+  sessionDetailError: string | null;
 }
 
 const MAX_CHART_SESSIONS = 16;
@@ -31,6 +34,9 @@ export function HistoricalAnalyticsDashboard({
   error,
   adaptiveMode,
   onRefresh,
+  onOpenSession,
+  sessionDetailLoading,
+  sessionDetailError,
 }: HistoricalAnalyticsDashboardProps) {
   const [technicalExpanded, setTechnicalExpanded] = useState(false);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
@@ -279,6 +285,25 @@ export function HistoricalAnalyticsDashboard({
                 </Pressable>
               ))}
             </View>
+            {sessionDetailError !== null && (
+              <Text style={styles.sessionDetailError}>
+                Unable to open that session. Historical analytics and real-time monitoring are unaffected.
+              </Text>
+            )}
+            <Pressable
+              accessibilityRole="button"
+              disabled={sessionDetailLoading}
+              onPress={() => onOpenSession(selectedSession.id)}
+              style={({ pressed }) => [
+                styles.openSessionButton,
+                sessionDetailLoading && styles.refreshButtonDisabled,
+                pressed && !sessionDetailLoading && styles.pressed,
+              ]}
+            >
+              <Text style={styles.openSessionButtonText}>
+                {sessionDetailLoading ? 'Opening session…' : 'Open Selected Session Results'}
+              </Text>
+            </Pressable>
           </AnalyticsSection>
 
           <AnalyticsSection
@@ -652,6 +677,9 @@ const styles = StyleSheet.create({
   recentValueBlock: { alignItems: 'flex-end', marginLeft: 10 },
   recentValue: { color: '#2E7463', fontSize: 16, fontWeight: '800' },
   recentValueLabel: { color: '#718090', fontSize: 9 },
+  openSessionButton: { backgroundColor: '#173F67', borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 12 },
+  openSessionButtonText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
+  sessionDetailError: { color: '#8E3F2D', backgroundColor: '#FFF3EF', borderRadius: 9, padding: 10, fontSize: 11, lineHeight: 16, marginTop: 10 },
   directionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   directionCard: { width: '48%', backgroundColor: '#F4F7FA', borderRadius: 12, padding: 12 },
   directionName: { color: '#4F6173', fontSize: 12, fontWeight: '800' },

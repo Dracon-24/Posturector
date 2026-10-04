@@ -155,3 +155,20 @@ export async function fetchHistoricalTrends(): Promise<HistoricalTrends> {
 
     return result as HistoricalTrends;
 }
+
+export async function fetchSessionById(id: string): Promise<SessionUpload> {
+    const response = await fetch(
+        `${API_BASE_URL}/api/sessions/${encodeURIComponent(id)}`
+    );
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(
+            `Failed to fetch session: ${response.status} ${errorText}`
+        );
+    }
+
+    const result: unknown = await response.json();
+
+    return result as SessionUpload;
+}

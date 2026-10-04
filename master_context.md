@@ -150,6 +150,7 @@ posture-belt/
 │   ├── sessionRecorder.ts
 │   └── stability.ts
 ├── test/
+│   ├── applicationLifecycleUx.test.mjs
 │   ├── adaptiveFeedback.test.mjs
 │   ├── adaptiveFullIntegration.test.mjs
 │   ├── adaptiveSystemEvaluation.test.mjs
@@ -1455,6 +1456,14 @@ It does not recalculate metrics, create another session, generate another
 ID, or retry automatically. A synchronous upload guard prevents
 overlapping requests, including rapid repeated Retry presses.
 
+The results dashboard uses application-level sync language for every
+state. Results are visible while the request is uploading. A failure
+states that the finalized result remains available for the current app
+session and exposes Retry Sync. HTTP 409 is described as “may already be
+synced,” clears the pending references, and retains the existing history
+refresh behavior. No raw network exception is rendered in the primary
+UI.
+
 ------------------------------------------------------------------------
 
 # 39. WHY THE IMU SERVICE CAN REMAIN RUNNING AFTER STOP
@@ -1881,6 +1890,8 @@ coalesced trailing-refresh coordination
 finalized engineering monitoring dashboard
 throttled adaptive/runtime dashboard snapshot
 finalized completed-session performance dashboard
+three-surface Monitor / Session Results / History navigation
+calibrated-idle, calibration-failure, and sync-status UX
 ```
 
 It imports session upload and historical analytics functions/types from:
@@ -1903,10 +1914,39 @@ reference.
 That was removed/replaced with the established session reference and
 `endSession(...)` flow.
 
-Historical analytics is rendered after completed-session Performance
-Metrics and before calibration controls. It is hidden during calibration
-and active monitoring so it remains supplementary to the real-time
-workflow.
+The application uses local conditional rendering for three top-level
+surfaces: Monitor, Session Results, and History. No navigation dependency
+or navigation stack is used. Monitor contains the current calibration and
+monitoring lifecycle, Session Results reuses the finalized results
+dashboard, and History contains the historical analytics dashboard.
+
+Stopping monitoring selects Session Results immediately after local
+finalization and metric calculation; asynchronous persistence does not
+block the result. Starting a new session returns to Monitor. The latest
+local finalized session remains in state while a selected historical
+session is displayed.
+
+The Monitor surface distinguishes:
+
+``` text
+CALIBRATION REQUIRED
+CALIBRATING
+CALIBRATED — READY
+MONITORING
+```
+
+A valid calibration shows its baseline, variability, confidence, sample
+count, duration, Start Monitoring, and Recalibrate actions. A failed
+calibration explains either the supported insufficient-sample reason or
+the measured pitch/roll variability that exceeded the existing 4°
+engineering limit, then exposes Try Again. During monitoring the
+recalibration control remains unavailable and the UI instructs the user
+to stop monitoring first.
+
+Start Monitoring and Recalibrate retain their existing synchronous ref
+guards. Starting either lifecycle clears the throttled presentation-only
+runtime snapshot so values from the previous session are not shown as
+current; processing constants and controller behavior are unchanged.
 
 The presentation is isolated in:
 
@@ -2252,10 +2292,20 @@ sessions are included only in the backend summary. Recent activity shows
 the most recent six sessions. Very large histories may eventually
 require backend pagination.
 
-The trends response does not contain the full stored session payload,
-so historical-session navigation into `SessionResultsDashboard` is not
-implemented. Adding it would require a deliberate frontend detail-fetch
-and validation flow using the existing session-detail API.
+The trends response supplies the selectable session ID. Opening a
+selected historical session fetches its existing full stored payload
+through `GET /api/sessions/:id` and renders it with the same
+`SessionResultsDashboard`; the frontend does not create a second detail
+implementation. A detail-fetch failure leaves History visible with an
+application-level retryable error and does not replace the latest local
+result.
+
+The application does not install an Android navigation/back stack.
+Top-level surface changes are local conditional rendering, so they do
+not stop monitoring, discard a result, or mutate the lifecycle. Android
+hardware Back retains the single-screen application behavior; custom
+back-stack handling remains a future consideration if a navigation
+architecture is introduced.
 
 ------------------------------------------------------------------------
 
@@ -2480,12 +2530,14 @@ session-duration chart and recent activity list
 selected-session direction details
 expandable technical coverage details
 backend/local-processing status distinction
+selected-session opening through the existing session-detail endpoint
 ```
 
-The section appears after completed-session Performance Metrics and
-before calibration controls. It is hidden while calibration or active
-monitoring is running and becomes visible again when monitoring is
-inactive.
+The dashboard is available from the History surface. Selecting a recent
+session and choosing Open Selected Session Results fetches the stored
+session by ID and opens it in the existing results surface. The current
+locally finalized result is retained and can be restored through the
+Session Results navigation control.
 
 The summary displays the implemented backend summary fields, including
 included/excluded counts. Historical consistency is displayed from the

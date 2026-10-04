@@ -35,6 +35,7 @@ interface SessionResultsDashboardProps {
   canonicalRollThreshold: number;
   onRetryUpload: () => void;
   onStartNewSession: () => void;
+  canStartNewSession?: boolean;
 }
 
 interface DeviationChartBucket {
@@ -58,6 +59,7 @@ export function SessionResultsDashboard({
   canonicalRollThreshold,
   onRetryUpload,
   onStartNewSession,
+  canStartNewSession = true,
 }: SessionResultsDashboardProps) {
   const [technicalExpanded, setTechnicalExpanded] =
     useState(false);
@@ -135,7 +137,7 @@ export function SessionResultsDashboard({
           Finalized locally from the completed monitoring session.
         </Text>
         <UploadStatus state={uploadState} onRetry={onRetryUpload} />
-        {(uploadState === 'saved' || uploadState === 'possibly-saved') && (
+        {(uploadState === 'saved' || uploadState === 'possibly-saved') && canStartNewSession && (
           <Pressable
             accessibilityRole="button"
             onPress={onStartNewSession}
@@ -450,19 +452,22 @@ function UploadStatus({
         : styles.uploadActive;
 
   return (
-    <View style={styles.uploadRow}>
-      <View style={[styles.uploadBadge, toneStyle]}>
-        <Text style={styles.uploadBadgeText}>UPLOAD · {label.toUpperCase()}</Text>
+    <View>
+      <View style={styles.uploadRow}>
+        <View style={[styles.uploadBadge, toneStyle]}>
+          <Text style={styles.uploadBadgeText}>SYNC · {label.toUpperCase()}</Text>
+        </View>
+        {state === 'failed' && (
+          <Pressable
+            accessibilityRole="button"
+            onPress={onRetry}
+            style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}
+          >
+            <Text style={styles.retryButtonText}>Retry Sync</Text>
+          </Pressable>
+        )}
       </View>
-      {state === 'failed' && (
-        <Pressable
-          accessibilityRole="button"
-          onPress={onRetry}
-          style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}
-        >
-          <Text style={styles.retryButtonText}>Retry Upload</Text>
-        </Pressable>
-      )}
+      <Text style={styles.uploadMessage}>{formatUploadMessage(state)}</Text>
     </View>
   );
 }
@@ -749,11 +754,21 @@ function formatDirection(direction: PostureDirection): string {
 
 function formatUploadState(state: SessionUploadState): string {
   switch (state) {
-    case 'uploading': return 'Uploading';
-    case 'saved': return 'Saved';
-    case 'failed': return 'Failed — retry required';
-    case 'possibly-saved': return 'Possibly saved';
+    case 'uploading': return 'Saving session';
+    case 'saved': return 'Session synced';
+    case 'failed': return 'Sync failed';
+    case 'possibly-saved': return 'May already be synced';
     case 'idle': return 'Local result';
+  }
+}
+
+function formatUploadMessage(state: SessionUploadState): string {
+  switch (state) {
+    case 'uploading': return 'Your finalized results are available while the session is saved.';
+    case 'saved': return 'The completed session is available in historical analytics.';
+    case 'failed': return 'Session remains available in this app session. Sync failed; retry when the backend is available.';
+    case 'possibly-saved': return 'Session may already be synced. History was refreshed without creating a duplicate.';
+    case 'idle': return 'The finalized session is available locally.';
   }
 }
 
@@ -797,6 +812,7 @@ const styles = StyleSheet.create({
   uploadWarning: { backgroundColor: '#FFE7D8' },
   uploadActive: { backgroundColor: '#DCEAF5' },
   uploadBadgeText: { color: '#17324B', fontSize: 10, fontWeight: '900' },
+  uploadMessage: { color: '#D3E2ED', fontSize: 11, lineHeight: 16, marginTop: 7 },
   retryButton: {
     backgroundColor: '#FFFFFF',
     borderRadius: 8,
