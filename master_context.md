@@ -129,6 +129,7 @@ posture-belt/
 ├── master_context.md
 │
 ├── components/
+│   ├── HistoricalAnalyticsDashboard.tsx
 │   └── SessionResultsDashboard.tsx
 │
 ├── models/
@@ -1874,7 +1875,7 @@ session recording
 performance metrics
 backend upload
 monitoringActive lifecycle
-historical analytics state and UI
+historical analytics state and dashboard integration
 startup/manual/post-upload analytics loading
 coalesced trailing-refresh coordination
 finalized engineering monitoring dashboard
@@ -1906,6 +1907,16 @@ Historical analytics is rendered after completed-session Performance
 Metrics and before calibration controls. It is hidden during calibration
 and active monitoring so it remains supplementary to the real-time
 workflow.
+
+The presentation is isolated in:
+
+``` text
+components/HistoricalAnalyticsDashboard.tsx
+```
+
+The component consumes the existing backend summary and chronological
+trend responses. It does not recalculate historical aggregates or enter
+the real-time processing path.
 
 ## Finalized real-time monitoring dashboard
 
@@ -2226,18 +2237,25 @@ synchronization.
 
 The current frontend intentionally has:
 
--   no charts or charting dependency
+-   no external charting dependency
 -   no date-range filters
 -   no pagination
 -   no analytics polling
 -   no cloud analytics
 -   no authentication or multi-user separation
--   no frontend historical-analytics unit-test framework
 
-Historical trend rows are mapped as ordinary views inside the existing
-`ScrollView`. This is appropriate for the currently expected modest
-dataset, but very large histories may eventually require pagination or
-rendering optimization.
+Historical charts are dependency-free React Native views and use only
+the actual session points returned by the trends endpoint. They do not
+smooth, interpolate, or synthesize data. For mobile readability, charts
+show the most recent 16 sessions and state when additional compatible
+sessions are included only in the backend summary. Recent activity shows
+the most recent six sessions. Very large histories may eventually
+require backend pagination.
+
+The trends response does not contain the full stored session payload,
+so historical-session navigation into `SessionResultsDashboard` is not
+implemented. Adding it would require a deliberate frontend detail-fetch
+and validation flow using the existing session-detail API.
 
 ------------------------------------------------------------------------
 
@@ -2442,8 +2460,9 @@ deviation history, and correction-response arrays.
 
 # 59. HISTORICAL ANALYTICS UI
 
-Historical Analytics is implemented in `App.tsx`, using typed API
-functions from `services/apiService.ts`.
+Historical Analytics is integrated in `App.tsx` and presented by
+`components/HistoricalAnalyticsDashboard.tsx`, using typed API functions
+from `services/apiService.ts`.
 
 The frontend provides:
 
@@ -2452,10 +2471,15 @@ startup summary/trend loading
 manual refresh
 refresh after successful session upload or HTTP 409
 loading and refreshing states
-error state
-empty state
-historical summary
-chronological per-session trend rows
+polished error and retry state that preserves stale data
+empty and incompatible-data states
+backend aggregate overview
+actual per-session consistency chart
+separate completion-rate and correction-time charts
+session-duration chart and recent activity list
+selected-session direction details
+expandable technical coverage details
+backend/local-processing status distinction
 ```
 
 The section appears after completed-session Performance Metrics and
@@ -2464,10 +2488,22 @@ monitoring is running and becomes visible again when monitoring is
 inactive.
 
 The summary displays the implemented backend summary fields, including
-included/excluded counts. Trend rows display date/time, monitored
-duration, consistency, average correction time, feedback events,
-completed corrections, completion rate, and sampling rate. Nullable
-averages display `N/A`; no placeholder or invented values are created.
+included/excluded counts. Historical consistency is displayed from the
+backend duration-weighted aggregate and is explicitly distinguished from
+a simple average of session percentages. Charts use chronological trend
+records directly, retain missing correction-time values as unavailable,
+and provide selected-session details. Direction values are shown only for
+the selected session because those values are already exposed by the
+trends response; the frontend does not reconstruct direction aggregates.
+Nullable values display `Unavailable`; no placeholder or invented values
+are created.
+
+The technical section reports stored, included, and legacy/incompatible
+session counts, aggregation duration, aggregate sampling rate, and data
+coverage. In DEMO mode it identifies the accelerated adaptive timing and
+does not imply clinical validation. The status section states that
+historical analytics requires backend data while real-time monitoring is
+local and unaffected by analytics availability.
 
 ### Loading and refresh lifecycle
 

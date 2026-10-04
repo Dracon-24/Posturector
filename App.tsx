@@ -96,6 +96,10 @@ import {
   SessionResultsDashboard,
 } from './components/SessionResultsDashboard';
 
+import {
+  HistoricalAnalyticsDashboard,
+} from './components/HistoricalAnalyticsDashboard';
+
 
 // =====================================
 // OBJECTS
@@ -2484,284 +2488,16 @@ export default function App() {
         !isCalibrating &&
         !monitoringActive.current && (
 
-          <View style={styles.card}>
-
-            <Text style={styles.heading}>
-              Historical Analytics
-            </Text>
-
-
-            {
-              historicalLoading &&
-              historicalSummary === null &&
-              historicalTrends === null && (
-
-                <Text style={styles.instruction}>
-                  Loading historical analytics...
-                </Text>
-
-              )
-            }
-
-
-            {
-              historicalError !== null && (
-
-                <Text style={styles.warning}>
-                  {historicalError}
-                </Text>
-
-              )
-            }
-
-
-            {
-              historicalSummary !== null &&
-              historicalSummary.totalSessions === 0 && (
-
-                <Text style={styles.instruction}>
-                  No historical sessions available.
-                </Text>
-
-              )
-            }
-
-
-            {
-              historicalSummary !== null &&
-              historicalSummary.totalSessions > 0 && (
-
-                <>
-
-                  <Text style={styles.result}>
-                    Total Sessions:{' '}
-                    {historicalSummary.totalSessions}
-                  </Text>
-
-
-                  <Text style={styles.result}>
-                    Sessions Included in Analytics:{' '}
-                    {historicalSummary.includedSessions}
-                  </Text>
-
-
-                  <Text style={styles.result}>
-                    Sessions Excluded:{' '}
-                    {historicalSummary.excludedSessions}
-                  </Text>
-
-
-                  <Text style={styles.result}>
-                    Total Monitored Duration:{' '}
-                    {
-                      (
-                        historicalSummary
-                          .totalMonitoredDuration /
-                        1000
-                      ).toFixed(1)
-                    }
-                    {' sec'}
-                  </Text>
-
-
-                  <Text style={styles.result}>
-                    Average Consistency:{' '}
-                    {
-                      historicalSummary
-                        .averageConsistency === null
-                        ? 'N/A'
-                        : historicalSummary
-                          .averageConsistency
-                          .toFixed(1) + '%'
-                    }
-                  </Text>
-
-
-                  <Text style={styles.result}>
-                    Average Correction Time:{' '}
-                    {
-                      historicalSummary
-                        .averageCorrectionTime === null
-                        ? 'N/A'
-                        : historicalSummary
-                          .averageCorrectionTime
-                          .toFixed(2) + ' sec'
-                    }
-                  </Text>
-
-
-                  <Text style={styles.result}>
-                    Total Feedback Events:{' '}
-                    {historicalSummary.totalFeedbackEvents}
-                  </Text>
-
-
-                  <Text style={styles.result}>
-                    Total Completed Corrections:{' '}
-                    {historicalSummary.totalCompletedCorrections}
-                  </Text>
-
-
-                  <Text style={styles.result}>
-                    Overall Completion Rate:{' '}
-                    {
-                      historicalSummary
-                        .overallCompletionRate
-                        .toFixed(1)
-                    }
-                    %
-                  </Text>
-
-
-                  <Text style={styles.result}>
-                    Average Sampling Rate:{' '}
-                    {
-                      historicalSummary
-                        .averageSamplingRate === null
-                        ? 'N/A'
-                        : historicalSummary
-                          .averageSamplingRate
-                          .toFixed(1) + ' Hz'
-                    }
-                  </Text>
-
-
-                  <Text style={styles.heading}>
-                    Historical Sessions
-                  </Text>
-
-
-                  {
-                    historicalTrends !== null &&
-                    historicalTrends.sessions.length === 0 && (
-
-                      <Text style={styles.instruction}>
-                        No historical sessions available.
-                      </Text>
-
-                    )
-                  }
-
-
-                  {
-                    historicalTrends?.sessions.map(
-                      (historicalSession) => (
-
-                        <View
-                          key={historicalSession.id}
-                          style={styles.historicalSession}
-                        >
-
-                          <Text style={styles.resultTitle}>
-                            {
-                              new Date(
-                                historicalSession.startTime
-                              ).toLocaleString()
-                            }
-                          </Text>
-
-
-                          <Text style={styles.result}>
-                            Monitored Duration:{' '}
-                            {
-                              (
-                                historicalSession
-                                  .monitoredDuration /
-                                1000
-                              ).toFixed(1)
-                            }
-                            {' sec'}
-                          </Text>
-
-
-                          <Text style={styles.result}>
-                            Consistency:{' '}
-                            {
-                              historicalSession
-                                .consistency
-                                .toFixed(1)
-                            }
-                            %
-                          </Text>
-
-
-                          <Text style={styles.result}>
-                            Average Correction Time:{' '}
-                            {
-                              historicalSession
-                                .averageCorrectionTime === null
-                                ? 'N/A'
-                                : historicalSession
-                                  .averageCorrectionTime
-                                  .toFixed(2) + ' sec'
-                            }
-                          </Text>
-
-
-                          <Text style={styles.result}>
-                            Feedback Events:{' '}
-                            {historicalSession.feedbackEvents}
-                          </Text>
-
-
-                          <Text style={styles.result}>
-                            Completed Corrections:{' '}
-                            {historicalSession.completedCorrections}
-                          </Text>
-
-
-                          <Text style={styles.result}>
-                            Completion Rate:{' '}
-                            {
-                              historicalSession
-                                .completionRate
-                                .toFixed(1)
-                            }
-                            %
-                          </Text>
-
-
-                          <Text style={styles.result}>
-                            Sampling Rate:{' '}
-                            {
-                              historicalSession
-                                .actualSamplingRate
-                                .toFixed(1)
-                            }
-                            {' Hz'}
-                          </Text>
-
-                        </View>
-
-                      )
-                    )
-                  }
-
-                </>
-
-              )
-            }
-
-
-            <Pressable
-              style={styles.button}
-              onPress={() => {
-                void loadHistoricalAnalytics();
-              }}
-              disabled={historicalLoading}
-            >
-
-              <Text style={styles.buttonText}>
-                {
-                  historicalLoading
-                    ? 'Refreshing...'
-                    : 'Refresh Analytics'
-                }
-              </Text>
-
-            </Pressable>
-
-          </View>
+          <HistoricalAnalyticsDashboard
+            summary={historicalSummary}
+            trends={historicalTrends}
+            loading={historicalLoading}
+            error={historicalError}
+            adaptiveMode={adaptiveThresholdController.getMode()}
+            onRefresh={() => {
+              void loadHistoricalAnalytics();
+            }}
+          />
 
         )
       }
@@ -3586,14 +3322,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#34465A',
     marginVertical: 3,
-  },
-
-
-  historicalSession: {
-    borderTopWidth: 1,
-    borderTopColor: '#ddd',
-    paddingTop: 12,
-    marginTop: 12,
   },
 
 
