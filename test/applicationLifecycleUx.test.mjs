@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { SESSION_SECTIONS } from '../ui/sessionAnalytics.ts';
 
 const app = await readFile(new URL('../App.tsx', import.meta.url), 'utf8');
 const shell = await readFile(new URL('../components/ApplicationShell.tsx', import.meta.url), 'utf8');
@@ -18,7 +19,8 @@ test('application exposes exactly four local bottom-navigation destinations', ()
 
 test('monitor, session, and history use required subsection navigation', () => {
   assert.match(shell, /'live', 'calibration', 'adaptive', 'system'/);
-  assert.match(results, /'overview', 'posture', 'corrections', 'adaptive', 'technical'/);
+  assert.deepEqual(SESSION_SECTIONS, ['overview', 'posture', 'corrections', 'adaptive', 'stability', 'technical']);
+  assert.match(results, /SESSION_SECTIONS\.map/);
   assert.match(history, /'weekly', 'daily', 'sessions'/);
 });
 

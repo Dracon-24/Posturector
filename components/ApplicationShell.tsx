@@ -271,15 +271,16 @@ export function ApplicationShell(props: ApplicationShellProps) {
               <EmptyState title={props.monitoring ? 'Monitoring in progress' : 'No completed session'} body={props.monitoring ? 'Stop monitoring to finalize metrics and review the result.' : 'Complete a monitoring session or open one from History.'} />
             ) : (
               <SessionResultsDashboard
+                key={props.displayedResult.id}
                 session={props.displayedResult}
                 metrics={props.displayedResult.metrics}
-                uploadState={props.uploadState}
+                uploadState={props.displayedResult.id === props.session?.id ? props.uploadState : 'saved'}
                 adaptiveMode={props.adaptiveMode}
                 canonicalPitchThreshold={props.displayedCanonicalPitchThreshold}
                 canonicalRollThreshold={props.displayedCanonicalRollThreshold}
                 onRetryUpload={props.onRetryUpload}
                 onStartNewSession={props.onStartMonitoring}
-                canStartNewSession={!props.uploadPending && calibrated}
+                canStartNewSession={!props.monitoring && !props.isCalibrating && !props.uploadPending && calibrated}
               />
             )}
           </>

@@ -3332,7 +3332,7 @@ Monitor | Session | History | Settings
 `Monitor` owns live posture and is divided into `Live`, `Calibration`,
 `Adaptive`, and `System`. `Session` owns the current or selected completed
 result and is divided into `Overview`, `Posture`, `Corrections`, `Adaptive`,
-and `Technical`. `History` is append-oriented and provides `Weekly`, `Daily`,
+`Stability`, and `Technical`. `History` is append-oriented and provides `Weekly`, `Daily`,
 and `Sessions` views. `Settings` owns the explicit recalibration action,
 connection status, and application information.
 
@@ -3372,3 +3372,116 @@ are presentation-level groupings of the existing chronological trend records.
 They use stored monitored duration, good-posture time, feedback counts,
 completed corrections, response-time averages weighted by completed-response
 count, and direction counts. No new clinical or posture metric is introduced.
+
+------------------------------------------------------------------------
+
+# 75. EXPANDED PER-SESSION ANALYTICS
+
+The Session dashboard now presents six subsections within the existing
+four-destination mobile shell. This section supersedes the earlier Session
+presentation description in section 49. The theme, monitoring lifecycle,
+calibration persistence, real-time algorithms, DEMO timing, session schema,
+backend routes, and API contracts are unchanged.
+
+## Information ownership
+
+- `Overview`: finalized session duration, consistency, good/poor posture time,
+  longest continuous good-posture period, feedback count, completed correction
+  count, completion rate, average correction time, and measured sampling rate.
+  A collapsed, paginated event story uses actual recorded transitions and events.
+- `Posture`: acceptability timeline, separate pitch and roll deviation trends,
+  canonical/effective threshold references, and deviation-magnitude distribution.
+- `Corrections`: chronological response-time plot, directional feedback counts,
+  directional correction averages, and paginated expandable completed records.
+- `Adaptive`: recorded pitch/roll threshold and adjustment trends, final and
+  maximum recorded thresholds/adjustments, and explicit missing-history states.
+- `Stability`: explicit unavailable historical state and the reason it cannot be
+  certified from the current payload.
+- `Technical`: collapsed session identity, timestamps, sample count, original
+  calibration metadata, and sync state. Metrics already owned by other
+  subsections are referenced rather than repeated.
+
+## Data classification and definitions
+
+Directly available data includes the finalized `PerformanceMetrics`, original
+calibration snapshot, timestamped posture samples and effective thresholds,
+feedback events, and completed correction-response records. Consistency,
+completion rate, average correction time, directional feedback counts and
+directional correction averages are consumed from existing metrics rather than
+redefined by the dashboard.
+
+Deterministic presentation derivations include:
+
+``` text
+elapsed seconds = (record timestamp - session startTime) / 1000
+poor posture time = sum of positive adjacent-sample intervals whose
+                    earlier sample is not postureAcceptable
+unclassified time = max(0, monitoredDuration - sum of positive sample intervals)
+recorded threshold adjustment = recorded effective threshold - canonical threshold
+maximum recorded adjustment = maximum recorded effective threshold - canonical threshold
+```
+
+Poor-posture time uses the same earlier-sample interval convention as existing
+good-posture time. The time after the last sample is not automatically assigned
+to either posture state. With fewer than two samples, poor-posture time is
+displayed as unavailable. Consistency still uses the existing monitored-duration
+denominator. Zero feedback displays `No feedback events` instead of an invented
+completion percentage; missing correction averages remain unavailable.
+
+The distribution counts recorded samples using their stored `overallDeviation`
+(maximum absolute axis deviation), with display ranges `[0,2)`, `[2,4)`, `[4,6)`,
+`[6,8)`, and `8°+`. These are degree-based visualization bins, not classification
+thresholds or time estimates.
+
+The event story includes the first recorded sample as monitoring start, recorded
+acceptable/deviated state or dominant-direction transitions, real feedback
+timestamps, completed target-axis correction timestamps, and monitoring stop.
+It does not create failed corrections, persistence/reassertion events, or
+unrecorded safety-gate decisions.
+
+## Available charts and inspection
+
+Nine charts use existing recorded data:
+
+1. Posture acceptability timeline (recorded state markers).
+2. Pitch deviation trend with canonical and effective threshold references.
+3. Roll deviation trend with canonical and effective threshold references.
+4. Deviation magnitude distribution (recorded sample counts).
+5. Correction response-time trend (one point per completed response).
+6. Correction events by direction (feedback-event counts).
+7. Average correction time by direction (completed responses only).
+8. Adaptive pitch threshold and recorded adjustment trend.
+9. Adaptive roll threshold and recorded adjustment trend.
+
+Every available chart has a meaningful title, X/Y labels, units where applicable,
+readable ticks, a multi-series legend, and appropriate empty/short-session states.
+Time-series touch inspection uses original recorded points. Direction/distribution
+bars are selectable. Threshold traces use step segments; posture states are
+markers without interpolated states. Deviation segments connect recorded points
+without smoothing. Feedback/correction markers provide event context.
+
+Large charts retain original endpoints and bucket minima/maxima, with a bounded
+render budget and an explicit summary disclosure. No bucket averaging replaces
+deviation peaks. Exact-value inspection continues to use full original series.
+Event and correction lists page 15 records at a time so all records remain
+accessible. No charting dependency, sensor polling, timer or API polling was added.
+
+## Data deliberately unavailable
+
+The session snapshot does not persist behavioral evidence, evidence EMA,
+five-feature history, safety-gate history, final adaptive-feedback mode, feedback
+mode history, reassertion history, or a calibration timestamp. The dashboard
+does not infer these from thresholds or substitute current runtime state.
+Final effective thresholds are the last recorded sample values; a zero-sample
+session has no final or maximum recorded threshold result.
+
+Stability states and detector configuration provenance are not stored. The
+recorder may reject inputs after they have reached the live detector, so replaying
+only stored samples cannot certify the original decisions. Stable/unstable time,
+stability percentage, and a stability timeline are therefore explicitly
+unavailable in this checkpoint. The existing detector remains untouched.
+
+Historical session opening reuses this dashboard. Its sync label belongs to the
+selected stored session rather than an unrelated local pending upload. Selecting
+a different session resets presentation selection/expansion state. Starting a new
+session remains subject to the existing monitoring, calibration and upload guards.

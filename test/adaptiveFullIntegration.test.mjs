@@ -475,9 +475,10 @@ test('recalibration guard and reset path preserve lifecycle safety without chang
   assert.match(resultsSource, /Session Overview/);
   assert.match(resultsSource, /Completed correction records/);
   assert.match(resultsSource, /Final adaptive result/);
-  assert.match(resultsSource, /Direction distribution/);
-  assert.match(resultsSource, /Pitch and roll deviation/);
-  assert.match(resultsSource, /No completed correction responses were recorded\./);
+  assert.match(resultsSource, /Correction events by direction/);
+  assert.match(resultsSource, /Pitch deviation trend/);
+  assert.match(resultsSource, /Roll deviation trend/);
+  assert.match(resultsSource, /No completed corrections recorded\./);
   assert.match(resultsSource, /Start another session/);
   assert.doesNotMatch(resultsSource, /calculatePerformanceMetrics/);
 });
