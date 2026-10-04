@@ -29,8 +29,8 @@ test('daily aggregation uses stored duration and good-posture time', () => {
 
 test('history provides date and session selection and opens stored results by id', () => {
   assert.match(source, /setSelectedDate/);
-  assert.match(source, /setExpandedDay/);
-  assert.match(source, /onOpen\(id\)/);
+  assert.match(source, /selectedDayAnalytics/);
+  assert.match(source, /onOpen\(item.id\)/);
   assert.match(app, /fetchSessionById/);
   assert.match(app, /setActiveView\(\s*'session'\s*\)/);
 });

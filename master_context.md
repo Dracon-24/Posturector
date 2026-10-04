@@ -3333,7 +3333,9 @@ Monitor | Session | History | Settings
 `Adaptive`, and `System`. `Session` owns the current or selected completed
 result and is divided into `Overview`, `Posture`, `Corrections`, `Adaptive`,
 `Stability`, and `Technical`. `History` is append-oriented and provides `Weekly`, `Daily`,
-and `Sessions` views. `Settings` owns the explicit recalibration action,
+and `Sessions` views: complete selected-week aggregate, complete selected-day
+aggregate, and individual-session exploration respectively (see section 76).
+`Settings` owns the explicit recalibration action,
 connection status, and application information.
 
 The dashboard continues to consume the existing approximately 5 Hz runtime
@@ -3485,3 +3487,124 @@ Historical session opening reuses this dashboard. Its sync label belongs to the
 selected stored session rather than an unrelated local pending upload. Selecting
 a different session resets presentation selection/expansion state. Starting a new
 session remains subject to the existing monitoring, calibration and upload guards.
+
+------------------------------------------------------------------------
+
+# 76. SELECTED-WEEK AND SELECTED-DAY HISTORY ANALYTICS
+
+The History dashboard now separates analytical ownership clearly:
+
+``` text
+Weekly   = complete selected calendar week; chart points are days
+Daily    = complete selected calendar day; chart points are sessions
+Sessions = individual-session exploration; existing Session analytics opens by id
+```
+
+This replaces the earlier list-oriented Weekly/Daily presentation, not the
+Session analytics described in section 75. The four main destinations and
+existing historical request caching/coalescing, refresh and session-detail
+behavior remain unchanged. No backend endpoint, contract, schema, dependency,
+processing, calibration or adaptive timing changes were needed.
+
+## Calendar selection and completeness
+
+Previous/next week and previous/next day selectors use the device's local
+calendar, with Monday–Sunday weeks as before. The initial selection is the
+latest dated session (today if none); an explicitly chosen period is retained
+across refresh. Daily and Sessions also offer a paged recorded-date chooser.
+All compatible sessions whose start date belongs to the chosen period are
+aggregated, even if their end time crosses midnight. Undated sessions (no first
+sensor sample/start time) are not assigned to 1970: they are excluded from
+calendar reports, disclosed in coverage, and remain accessible in Sessions.
+
+Weekly charts preserve seven calendar slots. Days with no sessions are N/A,
+not recorded zero. A recorded zero feedback/correction count is still zero.
+Empty periods show explicit empty states, not fabricated measurements.
+
+## KPI and insight definitions
+
+Both Weekly and Daily show total monitored duration, number of sessions,
+average session duration, duration-weighted consistency, recorded good-posture
+time, longest within-session good-posture period, feedback count, completed
+correction count, completion rate, average completed-response time and aggregate
+actual sampling rate. Weekly also shows calendar-week average daily monitoring.
+
+``` text
+consistency = sum(timeInGoodPosture) / sum(monitoredDuration) × 100
+average session duration = sum(monitoredDuration) / session count
+weekly average daily monitoring = sum(monitoredDuration) / 7 calendar days
+completion rate = sum(completedCorrections) / sum(feedbackEvents) × 100
+average correction time = sum(session average × completed response count)
+                          / sum(completed response count)
+actual sampling rate = sum(sampleCount) / (sum(monitoredDuration) / 1000)
+longest good period = maximum stored within-session longestContinuousGoodPosture
+```
+
+Zero monitored duration makes consistency/sampling unavailable; no feedback
+makes period completion rate unavailable. Missing correction averages for a
+session with completed responses make the aggregate average unavailable rather
+than silently averaging incomplete coverage. Sessions without completed
+responses do not contribute zeros. Gaps between sessions never extend good
+periods or monitored duration. Completion rate is not a medical success score.
+
+Weekly insights identify the highest-consistency day, most-monitored day,
+fastest completed-response day and most frequent feedback direction. Daily
+insights identify the highest-consistency session, longest session, fastest
+completed-response session and dominant feedback direction. Ties are represented;
+large tie lists show the first three labels and the additional tied count;
+insights requiring unavailable data are omitted. Direction counts are stored
+`postureSpecific` feedback-event counts, not time in deviation. There are no
+causal claims, predictions, fatigue explanations or synthetic scores.
+
+## Graphs and session comparison
+
+Weekly provides daily consistency bars, monitored-duration bars, feedback-count
+bars, completed-correction bars, an average correction-time line, a good/poor
+posture-time stacked chart with the poor series explicitly unavailable, and
+aggregate feedback direction bars. Day points use day aggregates, not individual
+session values. Correction-time lines never bridge missing days.
+
+Daily provides session consistency, duration, feedback and completed-correction
+bars, a session average correction-time line, whole-day direction bars and
+recorded time-of-day monitoring bars. The optional comparison table shows session,
+duration, consistency, feedback, corrections, completion and average response.
+It does not open or replace the full Session dashboard.
+
+Time-of-day usage splits valid finalized intervals into device-local 00–06,
+06–12, 12–18 and 18–24 buckets. It includes only sessions starting the selected
+day and clips intervals to that day's midnight boundaries. Endpoints must be
+valid and their elapsed duration agree with stored monitored duration within
+1 ms. Invalid intervals are excluded and counted; recorded time outside the
+selected day is disclosed. No gaps are filled. Buckets without recorded
+intervals are N/A, not inferred inactivity. Calendar arithmetic retains local
+daylight-saving semantics rather than assuming every day is 24 hours.
+
+Every chart has a descriptive title, X/Y labels and units, readable ticks,
+legends, selectable exact values and empty states. Charts use React Native
+primitives, with no charting dependency. Daily charts/comparison rows, stored-date
+choices and session lists page six entries at a time; aggregate KPIs, insights,
+directions and usage still include all sessions. Sessions alone opens stored
+raw data through the existing explicit session-id action.
+
+## Data classification and limitations
+
+Directly available data: compatible backend trend records, session durations,
+good time, counts, stored per-session metrics, sampling counts, dates and
+direction counts. The existing backend summary remains the source for all-time
+coverage totals. Reliably derived data: selected-period totals, weighted metrics,
+calendar groupings, deterministic extrema and valid recorded interval splits.
+No raw sample history is fetched for Weekly or Daily.
+
+Poor-posture time cannot be recovered from trend records. Total minus good time
+also includes unclassified last-sample-to-stop time, so it is NOT labelled poor
+posture. The KPI and stacked-chart poor series explicitly say unavailable;
+the known good series is not a complete good/poor decomposition. Individual
+Session analytics can calculate poor time from raw samples using section 75.
+Historical adaptive evidence, mode/reassertion history, threshold histories and
+physiological fatigue are not reconstructed. No synthetic historical data,
+new metric definitions or clinical claims are introduced.
+
+Focused tests exercise calendar selection, all-session aggregation, weighted
+metrics, seven-day versus session chart ownership, missing values, recorded
+time intervals, paging, date selection and explicit session opening. Host UI
+tests validate state/render behavior, not native-device layout or touch geometry.
