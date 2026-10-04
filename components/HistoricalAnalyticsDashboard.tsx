@@ -11,6 +11,11 @@ import {
   HistoricalSummary,
   HistoricalTrends,
 } from '../services/apiService';
+import {
+  DEMO_TIMING_LABEL,
+  formatDuration,
+  formatPercent,
+} from '../ui/presentation';
 
 interface HistoricalAnalyticsDashboardProps {
   summary: HistoricalSummary | null;
@@ -92,7 +97,7 @@ export function HistoricalAnalyticsDashboard({
 
       {error !== null && (
         <View style={styles.errorCard}>
-          <Text style={styles.errorTitle}>Unable to load historical analytics</Text>
+          <Text style={styles.errorTitle}>⚠ Unable to load historical analytics</Text>
           <Text style={styles.errorBody}>
             Your real-time monitoring is unaffected. Existing results remain visible where available.
           </Text>
@@ -369,7 +374,7 @@ export function HistoricalAnalyticsDashboard({
                 </Text>
                 {adaptiveMode === 'DEMO' && (
                   <Text style={styles.demoNote}>
-                    Current review build: DEMO — accelerated adaptive timing. Historical trends are engineering prototype data, not clinically validated results.
+                    Current review build: {DEMO_TIMING_LABEL}. Historical trends are engineering prototype data, not clinically validated results.
                   </Text>
                 )}
               </View>
@@ -379,7 +384,7 @@ export function HistoricalAnalyticsDashboard({
           <View style={styles.syncCard}>
             <View style={styles.syncIndicator} />
             <View style={styles.syncCopy}>
-              <Text style={styles.syncTitle}>{loading ? 'Refreshing historical data' : 'Historical data loaded'}</Text>
+              <Text style={styles.syncTitle}>{loading ? '● Refreshing historical data' : '✓ Historical data loaded'}</Text>
               <Text style={styles.syncBody}>
                 Startup, manual, and completed-upload refreshes use the same backend analytics endpoints. No continuous polling is used.
               </Text>
@@ -566,10 +571,6 @@ function ChartRangeNote({ total, visible }: { total: number; visible: number }) 
   );
 }
 
-function formatPercent(value: number): string {
-  return `${value.toFixed(1)}%`;
-}
-
 function formatNullablePercent(value: number | null): string {
   return value === null ? 'Unavailable' : formatPercent(value);
 }
@@ -580,17 +581,6 @@ function formatNullableSeconds(value: number | null): string {
 
 function formatNullableHertz(value: number | null): string {
   return value === null ? 'Unavailable' : `${value.toFixed(1)} Hz`;
-}
-
-function formatDuration(milliseconds: number): string {
-  const totalSeconds = milliseconds / 1000;
-  if (totalSeconds < 60) {
-    return `${totalSeconds.toFixed(1)} s`;
-  }
-
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = Math.round(totalSeconds % 60);
-  return `${minutes}m ${seconds}s`;
 }
 
 function formatDateTime(timestamp: number): string {
@@ -623,27 +613,27 @@ function capitalize(value: string): string {
 
 const styles = StyleSheet.create({
   root: { marginBottom: 14 },
-  hero: { backgroundColor: '#122D46', borderRadius: 22, padding: 20, marginBottom: 14 },
+  hero: { backgroundColor: '#173F67', borderRadius: 22, padding: 22, marginBottom: 14 },
   heroTopRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   heroCopy: { flex: 1 },
-  eyebrow: { color: '#86CBB9', fontSize: 11, fontWeight: '800', letterSpacing: 1.2, marginBottom: 6 },
-  title: { color: '#FFFFFF', fontSize: 25, lineHeight: 30, fontWeight: '800' },
-  subtitle: { color: '#C8D6E2', fontSize: 14, lineHeight: 20, marginTop: 6 },
-  refreshButton: { backgroundColor: '#FFFFFF', borderRadius: 10, paddingHorizontal: 13, paddingVertical: 10 },
+  eyebrow: { color: '#9FC6E4', fontSize: 10, fontWeight: '900', letterSpacing: 1.5, marginBottom: 6 },
+  title: { color: '#FFFFFF', fontSize: 28, lineHeight: 33, fontWeight: '900' },
+  subtitle: { color: '#D3E2ED', fontSize: 13, lineHeight: 18, marginTop: 6 },
+  refreshButton: { backgroundColor: '#FFFFFF', borderRadius: 10, paddingHorizontal: 13, minHeight: 44, justifyContent: 'center' },
   refreshButtonDisabled: { opacity: 0.62 },
   refreshButtonText: { color: '#173F67', fontSize: 13, fontWeight: '800' },
   architectureNote: { borderTopWidth: 1, borderTopColor: '#31506B', marginTop: 18, paddingTop: 14 },
   architectureTitle: { color: '#FFFFFF', fontSize: 13, fontWeight: '700' },
   architectureBody: { color: '#AEC0CF', fontSize: 12, lineHeight: 17, marginTop: 3 },
-  section: { backgroundColor: '#FFFFFF', borderRadius: 18, borderWidth: 1, borderColor: '#E0E7ED', padding: 18, marginBottom: 14 },
-  sectionTitle: { color: '#132238', fontSize: 19, fontWeight: '800' },
-  sectionCaption: { color: '#657486', fontSize: 13, lineHeight: 18, marginTop: 4, marginBottom: 16 },
+  section: { backgroundColor: '#FFFFFF', borderRadius: 18, borderWidth: 1, borderColor: '#E0E7EE', padding: 18, marginBottom: 14 },
+  sectionTitle: { color: '#132238', fontSize: 19, fontWeight: '900' },
+  sectionCaption: { color: '#6D7D8D', fontSize: 12, lineHeight: 17, marginTop: 4, marginBottom: 16 },
   primaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  primaryMetric: { width: '48%', minHeight: 116, backgroundColor: '#F4F7FA', borderRadius: 14, padding: 13, borderTopWidth: 3, borderTopColor: '#AAB8C5' },
+  primaryMetric: { flexGrow: 1, flexBasis: '46%', minWidth: 128, minHeight: 116, backgroundColor: '#F7F9FB', borderRadius: 13, padding: 14, borderWidth: 1, borderColor: '#E0E7EE', borderTopWidth: 3, borderTopColor: '#AAB8C5' },
   primaryMetricGood: { backgroundColor: '#EEF8F4', borderTopColor: '#2E8A72' },
   primaryMetricAccent: { backgroundColor: '#EEF4FA', borderTopColor: '#3F6D9A' },
   metricLabel: { color: '#5D6A78', fontSize: 12, fontWeight: '700' },
-  metricValue: { color: '#132238', fontSize: 23, lineHeight: 28, fontWeight: '800', marginTop: 7 },
+  metricValue: { color: '#17324B', fontSize: 21, lineHeight: 26, fontWeight: '900', marginTop: 7 },
   metricDetail: { color: '#6F7D8B', fontSize: 11, lineHeight: 15, marginTop: 4 },
   definitionNote: { color: '#46596C', backgroundColor: '#F4F7FA', borderRadius: 10, fontSize: 12, lineHeight: 18, padding: 12, marginTop: 12 },
   chartTitle: { color: '#263A4E', fontSize: 13, fontWeight: '800', marginTop: 4, marginBottom: 8 },
@@ -677,11 +667,11 @@ const styles = StyleSheet.create({
   recentValueBlock: { alignItems: 'flex-end', marginLeft: 10 },
   recentValue: { color: '#2E7463', fontSize: 16, fontWeight: '800' },
   recentValueLabel: { color: '#718090', fontSize: 9 },
-  openSessionButton: { backgroundColor: '#173F67', borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 12 },
+  openSessionButton: { backgroundColor: '#173F67', borderRadius: 10, minHeight: 48, justifyContent: 'center', alignItems: 'center', marginTop: 12 },
   openSessionButtonText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
   sessionDetailError: { color: '#8E3F2D', backgroundColor: '#FFF3EF', borderRadius: 9, padding: 10, fontSize: 11, lineHeight: 16, marginTop: 10 },
   directionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  directionCard: { width: '48%', backgroundColor: '#F4F7FA', borderRadius: 12, padding: 12 },
+  directionCard: { flexGrow: 1, flexBasis: '46%', minWidth: 128, backgroundColor: '#F7F9FB', borderRadius: 12, padding: 12 },
   directionName: { color: '#4F6173', fontSize: 12, fontWeight: '800' },
   directionCount: { color: '#132238', fontSize: 20, fontWeight: '800', marginTop: 7 },
   directionTime: { color: '#3F6D9A', fontSize: 15, fontWeight: '800', marginTop: 9 },
@@ -706,17 +696,17 @@ const styles = StyleSheet.create({
   errorCard: { backgroundColor: '#FFF3EF', borderRadius: 16, borderWidth: 1, borderColor: '#EDC8BC', padding: 16, marginBottom: 14 },
   errorTitle: { color: '#8E3F2D', fontSize: 16, fontWeight: '800' },
   errorBody: { color: '#7A5148', fontSize: 12, lineHeight: 18, marginTop: 5 },
-  retryButton: { alignSelf: 'flex-start', backgroundColor: '#9B4935', borderRadius: 9, paddingHorizontal: 14, paddingVertical: 9, marginTop: 12 },
+  retryButton: { alignSelf: 'flex-start', backgroundColor: '#9B4935', borderRadius: 9, paddingHorizontal: 14, minHeight: 44, justifyContent: 'center', marginTop: 12 },
   retryButtonText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
-  emptyCard: { backgroundColor: '#FFFFFF', borderRadius: 18, borderWidth: 1, borderColor: '#E0E7ED', padding: 24, alignItems: 'center' },
+  emptyCard: { backgroundColor: '#FFFFFF', borderRadius: 18, borderWidth: 1, borderColor: '#E0E7EE', padding: 24, alignItems: 'center' },
   emptyEyebrow: { color: '#718090', fontSize: 10, fontWeight: '800', letterSpacing: 1.2 },
   emptyTitle: { color: '#132238', fontSize: 19, fontWeight: '800', textAlign: 'center', marginTop: 8 },
   emptyBody: { color: '#657486', fontSize: 13, lineHeight: 19, textAlign: 'center', marginTop: 7 },
-  loadingCard: { backgroundColor: '#FFFFFF', borderRadius: 18, borderWidth: 1, borderColor: '#E0E7ED', padding: 18 },
+  loadingCard: { backgroundColor: '#FFFFFF', borderRadius: 18, borderWidth: 1, borderColor: '#E0E7EE', padding: 18 },
   loadingTitle: { color: '#132238', fontSize: 17, fontWeight: '800' },
   loadingBody: { color: '#657486', fontSize: 12, marginTop: 5 },
   skeletonGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 16 },
-  skeletonBlock: { width: '48%', height: 78, backgroundColor: '#E9EEF2', borderRadius: 12 },
+  skeletonBlock: { flexGrow: 1, flexBasis: '46%', minWidth: 128, height: 78, backgroundColor: '#E9EEF2', borderRadius: 12 },
   trendEmpty: { backgroundColor: '#F4F7FA', borderRadius: 12, padding: 16 },
   trendEmptyTitle: { color: '#263A4E', fontSize: 14, fontWeight: '800' },
   trendEmptyBody: { color: '#667687', fontSize: 12, lineHeight: 17, marginTop: 4 },

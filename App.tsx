@@ -102,6 +102,11 @@ import {
   HistoricalAnalyticsDashboard,
 } from './components/HistoricalAnalyticsDashboard';
 
+import {
+  formatAdaptiveTimingMode,
+  formatDuration,
+} from './ui/presentation';
+
 
 // =====================================
 // OBJECTS
@@ -2242,9 +2247,7 @@ export default function App() {
         <View style={styles.demoDot} />
         <View style={styles.flexOne}>
           <Text style={styles.demoTitle}>
-            {adaptiveThresholdController.getMode() === 'DEMO'
-              ? 'DEMO — accelerated adaptive timing'
-              : 'PRODUCTION — normal adaptive timing'}
+            {formatAdaptiveTimingMode(adaptiveThresholdController.getMode())}
           </Text>
           <Text style={styles.demoBody}>
             Temporary engineering review configuration. Not production-validated timing.
@@ -2287,7 +2290,9 @@ export default function App() {
             : styles.heroNeutral,
       ]}>
         <Text style={styles.heroLabel}>CURRENT POSTURE</Text>
-        <Text style={styles.heroState}>{postureState}</Text>
+        <Text style={styles.heroState}>
+          {formatStatusValue(postureState, postureTone)}
+        </Text>
         <Text style={styles.heroDirection}>
           {monitoring
             ? `Direction · ${formatDirection(dashboardRuntime.direction)}`
@@ -3201,7 +3206,7 @@ function StatusPill({
   return (
     <View style={[styles.statusPill, toneStyle]}>
       <Text style={styles.statusPillLabel}>{label}</Text>
-      <Text style={styles.statusPillValue}>{value}</Text>
+      <Text style={styles.statusPillValue}>{formatStatusValue(value, tone)}</Text>
     </View>
   );
 }
@@ -3437,11 +3442,17 @@ function formatTimestamp(timestamp: number | null): string {
   return `${(timestamp / 1000).toFixed(2)} s`;
 }
 
-function formatDuration(duration: number): string {
-  const totalSeconds = Math.max(0, Math.floor(duration / 1000));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+function formatStatusValue(value: string, tone: StatusTone): string {
+  const symbol =
+    tone === 'good'
+      ? '✓'
+      : tone === 'active'
+        ? '●'
+        : tone === 'warning'
+          ? '⚠'
+          : '○';
+
+  return `${symbol} ${value}`;
 }
 
 function clampDisplayOffset(pitch: number): number {
@@ -3578,7 +3589,7 @@ const styles = StyleSheet.create({
 
   navigationButton: {
     flex: 1,
-    minHeight: 42,
+    minHeight: 44,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
@@ -3766,7 +3777,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#76501F',
     borderRadius: 8,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    minHeight: 44,
+    justifyContent: 'center',
     marginTop: 10,
   },
 
@@ -3779,7 +3791,7 @@ const styles = StyleSheet.create({
 
   heading: {
     fontSize: 19,
-    fontWeight: '700',
+    fontWeight: '900',
     color: '#132238',
     marginBottom: 12,
   },
@@ -3808,7 +3820,8 @@ const styles = StyleSheet.create({
 
   button: {
     backgroundColor: '#173F67',
-    paddingVertical: 14,
+    minHeight: 48,
+    justifyContent: 'center',
     borderRadius: 10,
     marginTop: 12,
     alignItems: 'center',
@@ -3818,7 +3831,7 @@ const styles = StyleSheet.create({
   buttonText: {
     color: '#fff',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '800',
   },
 
 

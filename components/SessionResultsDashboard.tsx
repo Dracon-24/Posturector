@@ -18,6 +18,11 @@ import {
 import {
   MAX_ADAPTIVE_ADJUSTMENT,
 } from '../processing/adaptiveThreshold';
+import {
+  formatAdaptiveTimingMode,
+  formatDuration,
+  formatPercent,
+} from '../ui/presentation';
 
 type SessionUploadState =
   | 'idle'
@@ -166,7 +171,7 @@ export function SessionResultsDashboard({
             <View style={styles.primaryMetricGrid}>
               <PrimaryMetric
                 label="Consistency"
-                value={`${metrics.consistency.toFixed(1)}%`}
+                value={formatPercent(metrics.consistency)}
                 tone="good"
               />
               <PrimaryMetric
@@ -180,7 +185,7 @@ export function SessionResultsDashboard({
               />
               <PrimaryMetric
                 label="Correction completion"
-                value={hasFeedback ? `${metrics.completionRate.toFixed(1)}%` : 'No feedback'}
+                value={hasFeedback ? formatPercent(metrics.completionRate) : 'No feedback'}
                 tone={hasFeedback ? 'accent' : 'neutral'}
               />
               <PrimaryMetric
@@ -202,7 +207,7 @@ export function SessionResultsDashboard({
           >
             <View style={styles.consistencyHeader}>
               <View>
-                <Text style={styles.consistencyValue}>{metrics.consistency.toFixed(1)}%</Text>
+                <Text style={styles.consistencyValue}>{formatPercent(metrics.consistency)}</Text>
                 <Text style={styles.metricCaption}>time within effective thresholds</Text>
               </View>
               <View style={styles.consistencyFacts}>
@@ -248,7 +253,7 @@ export function SessionResultsDashboard({
               <View style={styles.metricGrid}>
                 <SecondaryMetric label="Feedback events" value={`${metrics.feedbackEvents}`} />
                 <SecondaryMetric label="Completed corrections" value={`${metrics.completedCorrections}`} />
-                <SecondaryMetric label="Completion" value={`${metrics.completionRate.toFixed(1)}%`} />
+                <SecondaryMetric label="Completion" value={formatPercent(metrics.completionRate)} />
                 <SecondaryMetric
                   label="Average response"
                   value={metrics.averageCorrectionTime === null
@@ -401,9 +406,7 @@ export function SessionResultsDashboard({
             <FactRow label="Calibration validity" value={session.calibration.valid ? 'Valid' : 'Invalid'} />
             <FactRow
               label="Adaptive timing"
-              value={adaptiveMode === 'DEMO'
-                ? 'DEMO — accelerated adaptive timing'
-                : 'PRODUCTION — normal adaptive timing'}
+              value={formatAdaptiveTimingMode(adaptiveMode)}
             />
             <FactRow label="Upload state" value={formatUploadState(uploadState)} />
             {adaptiveMode === 'DEMO' && (
@@ -729,16 +732,6 @@ function maximumValue(values: number[], fallback: number): number {
   return maximum;
 }
 
-function formatDuration(milliseconds: number): string {
-  const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
-  if (minutes > 0) return `${minutes}m ${seconds}s`;
-  return `${seconds}s`;
-}
-
 function formatRelativeTime(timestamp: number, startTime: number): string {
   return `+${Math.max(0, (timestamp - startTime) / 1000).toFixed(2)} s`;
 }
@@ -754,11 +747,11 @@ function formatDirection(direction: PostureDirection): string {
 
 function formatUploadState(state: SessionUploadState): string {
   switch (state) {
-    case 'uploading': return 'Saving session';
-    case 'saved': return 'Session synced';
-    case 'failed': return 'Sync failed';
-    case 'possibly-saved': return 'May already be synced';
-    case 'idle': return 'Local result';
+    case 'uploading': return '● Saving session';
+    case 'saved': return '✓ Session synced';
+    case 'failed': return '⚠ Sync failed';
+    case 'possibly-saved': return '⚠ May already be synced';
+    case 'idle': return '○ Local result';
   }
 }
 
@@ -817,13 +810,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 8,
     paddingHorizontal: 11,
-    paddingVertical: 7,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   retryButtonText: { color: '#8D3D2C', fontSize: 11, fontWeight: '900' },
   newSessionButton: {
     backgroundColor: '#FFFFFF',
     borderRadius: 10,
-    paddingVertical: 12,
+    minHeight: 48,
+    justifyContent: 'center',
     alignItems: 'center',
     marginTop: 12,
   },

@@ -158,7 +158,11 @@ posture-belt/
 │   ├── adaptiveThresholdLongSession.test.mjs
 │   ├── adaptiveThreshold.test.mjs
 │   ├── loadTypeScriptModule.mjs
-│   └── monitoringLifecycle.test.mjs
+│   ├── monitoringLifecycle.test.mjs
+│   └── uiConsistency.test.mjs
+│
+├── ui/
+│   └── presentation.ts
 │
 ├── services/
 │   ├── imuService.ts
@@ -2034,6 +2038,41 @@ Upload failure leaves finalized results visible and retains the existing
 same-session retry action. After a terminal `saved` or `possibly-saved`
 outcome, the results screen offers Start Another Session using the
 existing calibrated-idle lifecycle; recalibration is not required.
+
+## Final application UI consistency
+
+The Monitor, Session Results, and History surfaces use one restrained
+engineering-dashboard language:
+
+``` text
+dark blue primary surfaces and actions
+white 18-pixel-radius section cards
+consistent neutral, success, warning, and error surfaces
+19-pixel high-weight section headings
+compact uppercase engineering labels
+44-pixel minimum secondary touch targets
+48-pixel minimum primary touch targets
+```
+
+Primary statuses include a text symbol as well as color: `✓` for good,
+`●` for active, `⚠` for warning/error, and `○` for neutral. The shared
+presentation helper standardizes duration, percentage, and adaptive
+timing labels across all three surfaces. Durations below one minute use
+one decimal second; longer durations use `m s` or `h m s`. Percentages
+use one decimal place, sampling rate uses one decimal place, and detailed
+engineering angles retain two decimal places while the posture hero uses
+one decimal place.
+
+The canonical review disclosure is:
+
+``` text
+DEMO — ACCELERATED ADAPTIVE TIMING
+```
+
+These changes are presentation-only. The 5 Hz dashboard snapshot,
+real-time processing loop, session metrics, analytics calculations,
+network behavior, upload lifecycle, and navigation semantics are
+unchanged.
 
 ------------------------------------------------------------------------
 
