@@ -16,8 +16,13 @@ import {
   loadTypeScriptModule,
 } from './loadTypeScriptModule.mjs';
 
-const { controller } = await loadAdaptiveThresholdModules();
+const { config, controller } = await loadAdaptiveThresholdModules();
 const { AdaptiveThresholdController } = controller;
+const { PRODUCTION_ADAPTIVE_THRESHOLD_CONFIG } = config;
+
+function createAdaptiveController() {
+  return new AdaptiveThresholdController(PRODUCTION_ADAPTIVE_THRESHOLD_CONFIG);
+}
 
 function postureSample(timestamp, pitchDeviation, rollDeviation = pitchDeviation, stable = true) {
   return {
@@ -59,7 +64,7 @@ test('scenario A: the complete confirmed-deviation and quick-correction chain re
   const { StabilityDetector } = await loadTypeScriptModule('../processing/stability.ts', import.meta.url);
   const { PersistenceDetector } = await loadTypeScriptModule('../processing/persistence.ts', import.meta.url);
   const baseline = { pitch: 0, roll: 0 };
-  const threshold = new AdaptiveThresholdController();
+  const threshold = createAdaptiveController();
   const feedback = new AdaptiveFeedbackController();
   const deviation = calculateDeviation(7, 0, 0, 0, 1, 1, {
     minimumThreshold: 4,
@@ -90,7 +95,7 @@ test('scenario A: the complete confirmed-deviation and quick-correction chain re
 });
 
 test('scenario B: prolonged-use evidence relaxes gradually without moving baseline', () => {
-  const adaptive = new AdaptiveThresholdController();
+  const adaptive = createAdaptiveController();
   const baseline = { pitch: 10, roll: -2 };
   establishHistory(adaptive);
   controlledDeterioration(adaptive);
@@ -102,7 +107,7 @@ test('scenario B: prolonged-use evidence relaxes gradually without moving baseli
 
 test('scenario C: slow correction changes feedback mode without changing threshold state', () => {
   const feedback = new AdaptiveFeedbackController();
-  const threshold = new AdaptiveThresholdController();
+  const threshold = createAdaptiveController();
   for (const responseTime of [7, 4, 8]) {
     feedback.recordCompletedResponse(responseTime);
   }
@@ -115,7 +120,7 @@ test('scenario C: slow correction changes feedback mode without changing thresho
 });
 
 test('scenario D: severe deterioration freezes relaxation and remains unacceptable', () => {
-  const adaptive = new AdaptiveThresholdController();
+  const adaptive = createAdaptiveController();
   establishHistory(adaptive);
   controlledDeterioration(adaptive);
   const before = adaptive.getState().pitchAdjustment;

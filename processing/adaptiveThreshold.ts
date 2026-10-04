@@ -1,24 +1,20 @@
 import {
     AxisBehaviorFeatureExtractor,
     CorrectionTrendFeature,
-    EVIDENCE_EMA_TAU,
     NormalizedBehavioralFeatures,
     TimeAwareEma,
     combineEqualWeightEvidence,
     clamp01,
 } from './adaptiveThresholdFeatures';
 
-export const MAX_ADAPTIVE_ADJUSTMENT = 3;
-export const MIN_OBSERVATION_DURATION = 10 * 60 * 1000;
-export const MIN_VALID_SAMPLES = 100;
-export const MIN_CORRECTION_RESPONSES = 3;
-export const MIN_GOOD_POSTURE_PERIODS = 2;
-export const EVIDENCE_ACTIVATION_THRESHOLD = 0.30;
-export const MAX_ADJUSTMENT_RATE_PER_MINUTE = 0.25;
-export const SEVERE_DEVIATION_MULTIPLIER = 2;
-export const MAJOR_DETERIORATION_THRESHOLD = 0.75;
+import {
+    ACTIVE_ADAPTIVE_THRESHOLD_CONFIG,
+    AdaptiveThresholdConfig,
+    AdaptiveThresholdMode,
+} from './adaptiveThresholdConfig';
 
-const MAX_ADJUSTMENT_ELAPSED = 60 * 1000;
+export const MAX_ADAPTIVE_ADJUSTMENT =
+    ACTIVE_ADAPTIVE_THRESHOLD_CONFIG.maximumAdaptiveAdjustment;
 
 export interface AdaptiveThresholdSample {
     timestamp: number;
@@ -94,11 +90,11 @@ export class AdaptiveThresholdController {
         rollAdjustment: 0,
     };
 
-    private readonly pitchFeatures = new AxisBehaviorFeatureExtractor();
-    private readonly rollFeatures = new AxisBehaviorFeatureExtractor();
-    private readonly correctionTrend = new CorrectionTrendFeature();
-    private readonly pitchEvidence = new TimeAwareEma(EVIDENCE_EMA_TAU);
-    private readonly rollEvidence = new TimeAwareEma(EVIDENCE_EMA_TAU);
+    private readonly pitchFeatures: AxisBehaviorFeatureExtractor;
+    private readonly rollFeatures: AxisBehaviorFeatureExtractor;
+    private readonly correctionTrend: CorrectionTrendFeature;
+    private readonly pitchEvidence: TimeAwareEma;
+    private readonly rollEvidence: TimeAwareEma;
 
     private sessionStartTimestamp: number | null = null;
     private lastSampleTimestamp: number | null = null;
@@ -110,6 +106,21 @@ export class AdaptiveThresholdController {
         correctionResponseCount: 0,
         observationDuration: 0,
     };
+
+    constructor(
+        private readonly config: AdaptiveThresholdConfig =
+            ACTIVE_ADAPTIVE_THRESHOLD_CONFIG
+    ) {
+        this.pitchFeatures = new AxisBehaviorFeatureExtractor(config);
+        this.rollFeatures = new AxisBehaviorFeatureExtractor(config);
+        this.correctionTrend = new CorrectionTrendFeature(config);
+        this.pitchEvidence = new TimeAwareEma(config.evidenceEmaTau);
+        this.rollEvidence = new TimeAwareEma(config.evidenceEmaTau);
+    }
+
+    getMode(): AdaptiveThresholdMode {
+        return this.config.mode;
+    }
 
     getState(): AdaptiveThresholdState {
         return { ...this.state };
@@ -147,7 +158,10 @@ export class AdaptiveThresholdController {
 
         const elapsedSinceLastSample = this.lastSampleTimestamp === null
             ? 0
-            : Math.min(sample.timestamp - this.lastSampleTimestamp, MAX_ADJUSTMENT_ELAPSED);
+            : Math.min(
+                sample.timestamp - this.lastSampleTimestamp,
+                this.config.maximumAdjustmentElapsed
+            );
 
         this.lastSampleTimestamp = sample.timestamp;
         this.validSampleCount += 1;
@@ -166,16 +180,17 @@ export class AdaptiveThresholdController {
         const observationDuration = Math.max(0, sample.timestamp - this.sessionStartTimestamp);
         const correctionResponseCount = this.correctionTrend.getCount();
         const commonDataSufficient =
-            observationDuration >= MIN_OBSERVATION_DURATION &&
-            this.validSampleCount >= MIN_VALID_SAMPLES &&
-            correctionResponseCount >= MIN_CORRECTION_RESPONSES;
+            observationDuration >= this.config.minimumObservationDuration &&
+            this.validSampleCount >= this.config.minimumValidSamples &&
+            correctionResponseCount >= this.config.minimumCorrectionResponses;
 
         const pitchDiagnostics = this.buildAxisDiagnostics(
             pitchFeatures,
             pitchCombined,
             pitchEvidence,
             commonDataSufficient &&
-                this.pitchFeatures.getGoodPosturePeriodCount() >= MIN_GOOD_POSTURE_PERIODS,
+                this.pitchFeatures.getGoodPosturePeriodCount() >=
+                    this.config.minimumGoodPosturePeriods,
             sample.pitchDeviation,
             sample.pitchThreshold,
             sample.stable
@@ -185,7 +200,8 @@ export class AdaptiveThresholdController {
             rollCombined,
             rollEvidence,
             commonDataSufficient &&
-                this.rollFeatures.getGoodPosturePeriodCount() >= MIN_GOOD_POSTURE_PERIODS,
+                this.rollFeatures.getGoodPosturePeriodCount() >=
+                    this.config.minimumGoodPosturePeriods,
             sample.rollDeviation,
             sample.rollThreshold,
             sample.stable
@@ -246,11 +262,12 @@ export class AdaptiveThresholdController {
             combinedEvidence,
             evidenceEma,
             dataSufficient,
-            severeDeviation: deviation > threshold * SEVERE_DEVIATION_MULTIPLIER,
+            severeDeviation:
+                deviation > threshold * this.config.severeDeviationMultiplier,
             unstable: !stable,
             majorDeterioration:
-                features.deviationTrend >= MAJOR_DETERIORATION_THRESHOLD &&
-                features.deviationFrequency >= MAJOR_DETERIORATION_THRESHOLD,
+                features.deviationTrend >= this.config.majorDeteriorationThreshold &&
+                features.deviationFrequency >= this.config.majorDeteriorationThreshold,
         };
     }
 
@@ -268,15 +285,19 @@ export class AdaptiveThresholdController {
             return current;
         }
 
-        const target = MAX_ADAPTIVE_ADJUSTMENT * clamp01(
-            (diagnostics.evidenceEma - EVIDENCE_ACTIVATION_THRESHOLD) /
-            (1 - EVIDENCE_ACTIVATION_THRESHOLD)
+        const target = this.config.maximumAdaptiveAdjustment * clamp01(
+            (diagnostics.evidenceEma - this.config.evidenceActivationThreshold) /
+            (1 - this.config.evidenceActivationThreshold)
         );
-        const maximumStep = MAX_ADJUSTMENT_RATE_PER_MINUTE *
+        const maximumStep = this.config.maximumAdjustmentRatePerMinute *
             (elapsed / (60 * 1000));
 
         if (target > current) {
-            return Math.min(target, current + maximumStep, MAX_ADAPTIVE_ADJUSTMENT);
+            return Math.min(
+                target,
+                current + maximumStep,
+                this.config.maximumAdaptiveAdjustment
+            );
         }
 
         return Math.max(target, current - maximumStep, 0);

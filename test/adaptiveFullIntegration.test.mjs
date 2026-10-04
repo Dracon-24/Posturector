@@ -11,8 +11,9 @@ import {
   loadTypeScriptModule,
 } from './loadTypeScriptModule.mjs';
 
-const { controller } = await loadAdaptiveThresholdModules();
+const { config, controller } = await loadAdaptiveThresholdModules();
 const { AdaptiveThresholdController, MAX_ADAPTIVE_ADJUSTMENT } = controller;
+const { PRODUCTION_ADAPTIVE_THRESHOLD_CONFIG } = config;
 const { adaptiveFeedback, feedback: feedbackModule } = await loadFeedbackModules();
 const { AdaptiveFeedbackController, FeedbackReassertionController } = adaptiveFeedback;
 const { FeedbackController } = feedbackModule;
@@ -60,7 +61,9 @@ function directionFor(pitch, roll, pitchDeviation, rollDeviation) {
 class SyntheticMonitoringHarness {
   constructor() {
     this.timestamp = 1;
-    this.threshold = new AdaptiveThresholdController();
+    this.threshold = new AdaptiveThresholdController(
+      PRODUCTION_ADAPTIVE_THRESHOLD_CONFIG
+    );
     this.adaptiveFeedback = new AdaptiveFeedbackController();
     this.stability = new StabilityDetector({
       windowDuration: 2,
@@ -452,5 +455,7 @@ test('recalibration guard and reset path preserve lifecycle safety without chang
   assert.match(appSource, /correctionTimestamp:/);
   assert.match(appSource, /adaptiveDiagnostics\.pitch\.evidenceEma/);
   assert.match(appSource, /canonicalThreshold:/);
+  assert.match(appSource, /adaptiveThresholdMode:/);
+  assert.match(appSource, /adaptiveThresholdController\.getMode\(\)/);
   assert.match(appSource, /adaptiveFeedbackController\.getState\(\)\.mode/);
 });

@@ -17,6 +17,18 @@ export async function loadTypeScriptModule(relativePath, parentUrl = import.meta
 }
 
 export async function loadAdaptiveThresholdModules() {
+  const configSource = await readFile(
+    new URL('../processing/adaptiveThresholdConfig.ts', import.meta.url),
+    'utf8'
+  );
+  const configOutput = ts.transpileModule(configSource, {
+    compilerOptions: {
+      module: ts.ModuleKind.ES2022,
+      target: ts.ScriptTarget.ES2022,
+    },
+  }).outputText;
+  const configUrl = toDataUrl(configOutput);
+
   const featuresSource = await readFile(
     new URL('../processing/adaptiveThresholdFeatures.ts', import.meta.url),
     'utf8'
@@ -26,7 +38,10 @@ export async function loadAdaptiveThresholdModules() {
       module: ts.ModuleKind.ES2022,
       target: ts.ScriptTarget.ES2022,
     },
-  }).outputText;
+  }).outputText.replace(
+    "'./adaptiveThresholdConfig'",
+    `'${configUrl}'`
+  );
   const featuresUrl = toDataUrl(featuresOutput);
 
   const controllerSource = await readFile(
@@ -38,12 +53,18 @@ export async function loadAdaptiveThresholdModules() {
       module: ts.ModuleKind.ES2022,
       target: ts.ScriptTarget.ES2022,
     },
-  }).outputText.replace(
-    "'./adaptiveThresholdFeatures'",
-    `'${featuresUrl}'`
-  );
+  }).outputText
+    .replace(
+      "'./adaptiveThresholdFeatures'",
+      `'${featuresUrl}'`
+    )
+    .replace(
+      "'./adaptiveThresholdConfig'",
+      `'${configUrl}'`
+    );
 
   return {
+    config: await import(configUrl),
     features: await import(featuresUrl),
     controller: await import(toDataUrl(controllerOutput)),
   };

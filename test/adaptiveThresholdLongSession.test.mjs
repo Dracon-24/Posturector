@@ -4,7 +4,7 @@ import test from 'node:test';
 import { calculateDeviation } from '../processing/deviation.ts';
 import { loadAdaptiveThresholdModules } from './loadTypeScriptModule.mjs';
 
-const { controller, features } = await loadAdaptiveThresholdModules();
+const { config, controller, features } = await loadAdaptiveThresholdModules();
 const {
   AdaptiveThresholdController,
   MAX_ADAPTIVE_ADJUSTMENT,
@@ -17,6 +17,11 @@ const {
   normalizeGoodPostureDuration,
   normalizeIncreasingTrend,
 } = features;
+const { PRODUCTION_ADAPTIVE_THRESHOLD_CONFIG } = config;
+
+function createAdaptiveController() {
+  return new AdaptiveThresholdController(PRODUCTION_ADAPTIVE_THRESHOLD_CONFIG);
+}
 
 const BASE_THRESHOLD = 6;
 const SENSOR_INTERVAL = 20;
@@ -105,7 +110,7 @@ function assertBounded(state) {
 }
 
 test('scenario A: prolonged stable normal posture keeps evidence and threshold near baseline', () => {
-  const adaptive = new AdaptiveThresholdController();
+  const adaptive = createAdaptiveController();
   seedHealthyHistory(adaptive);
   for (let timestamp = 606_000; timestamp <= 2_406_000; timestamp += 6_000) {
     if (timestamp % 180_000 === 0) {
@@ -120,7 +125,7 @@ test('scenario A: prolonged stable normal posture keeps evidence and threshold n
 });
 
 test('scenario B: habitual poor posture without progressive deterioration does not earn tolerance', () => {
-  const adaptive = new AdaptiveThresholdController();
+  const adaptive = createAdaptiveController();
   seedHealthyHistory(adaptive);
   for (let timestamp = 606_000; timestamp <= 2_406_000; timestamp += 6_000) {
     if (timestamp % 180_000 === 0) {
@@ -135,7 +140,7 @@ test('scenario B: habitual poor posture without progressive deterioration does n
 });
 
 test('scenario C: progressive multi-feature deterioration raises EMA before bounded relaxation', () => {
-  const adaptive = new AdaptiveThresholdController();
+  const adaptive = createAdaptiveController();
   seedHealthyHistory(adaptive);
   const snapshots = simulateProgressiveDeterioration(adaptive);
   const final = adaptive.getState();
@@ -148,7 +153,7 @@ test('scenario C: progressive multi-feature deterioration raises EMA before boun
 });
 
 test('scenario D: isolated severe spikes do not create sustained relaxation', () => {
-  const adaptive = new AdaptiveThresholdController();
+  const adaptive = createAdaptiveController();
   seedHealthyHistory(adaptive);
   const before = adaptive.getDiagnostics().pitch.evidenceEma;
 
@@ -163,7 +168,7 @@ test('scenario D: isolated severe spikes do not create sustained relaxation', ()
 });
 
 test('scenario E: severe deviation veto freezes relaxation despite elevated EMA', () => {
-  const adaptive = new AdaptiveThresholdController();
+  const adaptive = createAdaptiveController();
   seedHealthyHistory(adaptive);
   simulateProgressiveDeterioration(adaptive);
   const before = adaptive.getState().pitchAdjustment;
@@ -183,7 +188,7 @@ test('scenario E: severe deviation veto freezes relaxation despite elevated EMA'
 });
 
 test('scenario F: instability veto freezes an elevated adaptive threshold', () => {
-  const adaptive = new AdaptiveThresholdController();
+  const adaptive = createAdaptiveController();
   seedHealthyHistory(adaptive);
   simulateProgressiveDeterioration(adaptive);
   const before = adaptive.getState().pitchAdjustment;
@@ -194,7 +199,7 @@ test('scenario F: instability veto freezes an elevated adaptive threshold', () =
 });
 
 test('scenario G: rapid simultaneous deviation and frequency deterioration activates the veto', () => {
-  const adaptive = new AdaptiveThresholdController();
+  const adaptive = createAdaptiveController();
   seedHealthyHistory(adaptive);
   let observed = false;
 
@@ -212,7 +217,7 @@ test('scenario G: rapid simultaneous deviation and frequency deterioration activ
 });
 
 test('scenario H: sustained recovery lowers EMA and gradually returns toward baseline', () => {
-  const adaptive = new AdaptiveThresholdController();
+  const adaptive = createAdaptiveController();
   const canonical = { pitch: 10, roll: -2 };
   seedHealthyHistory(adaptive);
   simulateProgressiveDeterioration(adaptive);
@@ -251,7 +256,7 @@ test('scenario I: timestamp-aware EMA depends on elapsed time, not callback coun
 
 test('scenario I: a realistic 50 Hz prolonged session is deterministic and bounded', () => {
   function runSession() {
-    const adaptive = new AdaptiveThresholdController();
+    const adaptive = createAdaptiveController();
     adaptive.recordCompletedCorrection(2, 120_000);
     adaptive.recordCompletedCorrection(2.5, 300_000);
     adaptive.recordCompletedCorrection(3, 480_000);
@@ -273,7 +278,7 @@ test('scenario I: a realistic 50 Hz prolonged session is deterministic and bound
 });
 
 test('scenario J: lifecycle reset prevents session evidence and thresholds contaminating the next session', () => {
-  const adaptive = new AdaptiveThresholdController();
+  const adaptive = createAdaptiveController();
   seedHealthyHistory(adaptive);
   simulateProgressiveDeterioration(adaptive);
   assert.ok(adaptive.getState().pitchAdjustment > 0);
@@ -312,7 +317,7 @@ test('normalized physical units have equal bounded influence on combined evidenc
 });
 
 test('axis-specific deterioration changes pitch without moving roll or either canonical baseline', () => {
-  const adaptive = new AdaptiveThresholdController();
+  const adaptive = createAdaptiveController();
   const calibration = { pitchBaseline: 11, rollBaseline: -4 };
   seedHealthyHistory(adaptive);
   simulateProgressiveDeterioration(adaptive);

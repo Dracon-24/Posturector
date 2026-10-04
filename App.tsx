@@ -1347,6 +1347,8 @@ export default function App() {
               },
               adaptiveAdjustment:
                 adaptiveThresholdState,
+              adaptiveThresholdMode:
+                adaptiveThresholdController.getMode(),
               adaptiveFeedbackMode:
                 adaptiveFeedbackController.getState().mode,
             }

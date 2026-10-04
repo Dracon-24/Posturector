@@ -4,7 +4,7 @@ import test from 'node:test';
 import { calculateDeviation } from '../processing/deviation.ts';
 import { loadAdaptiveThresholdModules } from './loadTypeScriptModule.mjs';
 
-const { controller, features } = await loadAdaptiveThresholdModules();
+const { config, controller, features } = await loadAdaptiveThresholdModules();
 const {
   AdaptiveThresholdController,
   MAX_ADAPTIVE_ADJUSTMENT,
@@ -20,6 +20,11 @@ const {
   normalizeGoodPostureDuration,
   normalizeIncreasingTrend,
 } = features;
+const { PRODUCTION_ADAPTIVE_THRESHOLD_CONFIG } = config;
+
+function createAdaptiveController() {
+  return new AdaptiveThresholdController(PRODUCTION_ADAPTIVE_THRESHOLD_CONFIG);
+}
 
 function sample(timestamp, pitchDeviation, rollDeviation = pitchDeviation, stable = true) {
   return {
@@ -91,7 +96,10 @@ test('all five feature normalization paths are deterministic and bounded 0-1', (
   }
   assert.equal(normalizeDeviationRatio(6, 6), 0.5);
   assert.equal(normalizeCorrectionResponse(6), 0.5);
-  assert.equal(normalizeGoodPostureDuration(30), 0.5);
+  assert.equal(normalizeGoodPostureDuration(
+    30,
+    PRODUCTION_ADAPTIVE_THRESHOLD_CONFIG.goodPostureDurationReference
+  ), 0.5);
   assert.equal(isNearThreshold(5, 6), true);
   assert.equal(isNearThreshold(7, 6), false);
 });
@@ -125,7 +133,7 @@ test('time-aware EMA initializes safely, follows elapsed time, and remains bound
 });
 
 test('new session starts and resets with zero independent adjustments and EMA', () => {
-  const adaptive = new AdaptiveThresholdController();
+  const adaptive = createAdaptiveController();
   assert.deepEqual(adaptive.getState(), { pitchAdjustment: 0, rollAdjustment: 0 });
   establishMeaningfulHistory(adaptive);
   applyControlledDeterioration(adaptive);
@@ -135,7 +143,7 @@ test('new session starts and resets with zero independent adjustments and EMA', 
 });
 
 test('insufficient data, instability, and severe deviation freeze adaptation', () => {
-  const adaptive = new AdaptiveThresholdController();
+  const adaptive = createAdaptiveController();
   for (let timestamp = 0; timestamp < 60_000; timestamp += 1_000) {
     adaptive.update(sample(timestamp, 5.5));
   }
@@ -150,14 +158,14 @@ test('insufficient data, instability, and severe deviation freeze adaptation', (
 });
 
 test('normal stable posture produces low evidence without unnecessary relaxation', () => {
-  const adaptive = new AdaptiveThresholdController();
+  const adaptive = createAdaptiveController();
   establishMeaningfulHistory(adaptive);
   assert.ok(adaptive.getDiagnostics().pitch.evidenceEma < 0.4);
   assert.equal(adaptive.getState().pitchAdjustment, 0);
 });
 
 test('habitual constant bad posture does not look like progressive deterioration', () => {
-  const adaptive = new AdaptiveThresholdController();
+  const adaptive = createAdaptiveController();
   establishMeaningfulHistory(adaptive);
   for (let timestamp = 606_000; timestamp <= 1_806_000; timestamp += 6_000) {
     adaptive.update(sample(timestamp, 7));
@@ -167,7 +175,7 @@ test('habitual constant bad posture does not look like progressive deterioration
 });
 
 test('controlled prolonged-use evidence produces gradual bounded axis-specific relaxation', () => {
-  const adaptive = new AdaptiveThresholdController();
+  const adaptive = createAdaptiveController();
   establishMeaningfulHistory(adaptive);
   applyControlledDeterioration(adaptive);
   const state = adaptive.getState();
@@ -178,7 +186,7 @@ test('controlled prolonged-use evidence produces gradual bounded axis-specific r
 });
 
 test('one isolated bad sample cannot cause a large threshold jump', () => {
-  const adaptive = new AdaptiveThresholdController();
+  const adaptive = createAdaptiveController();
   establishMeaningfulHistory(adaptive);
   const before = adaptive.getState().pitchAdjustment;
   adaptive.update(sample(606_000, 11));
@@ -187,7 +195,7 @@ test('one isolated bad sample cannot cause a large threshold jump', () => {
 });
 
 test('instability freezes an already elevated temporary adjustment', () => {
-  const adaptive = new AdaptiveThresholdController();
+  const adaptive = createAdaptiveController();
   establishMeaningfulHistory(adaptive);
   applyControlledDeterioration(adaptive);
   const before = adaptive.getState().pitchAdjustment;
@@ -198,7 +206,7 @@ test('instability freezes an already elevated temporary adjustment', () => {
 });
 
 test('severe and major deterioration veto high evidence and keep poor posture outside', () => {
-  const adaptive = new AdaptiveThresholdController();
+  const adaptive = createAdaptiveController();
   establishMeaningfulHistory(adaptive);
   applyControlledDeterioration(adaptive);
   const before = adaptive.getState().pitchAdjustment;
@@ -215,7 +223,7 @@ test('severe and major deterioration veto high evidence and keep poor posture ou
 });
 
 test('simultaneous major deviation and frequency deterioration freezes relaxation', () => {
-  const adaptive = new AdaptiveThresholdController();
+  const adaptive = createAdaptiveController();
   establishMeaningfulHistory(adaptive);
   let majorDeteriorationObserved = false;
   let adjustmentAtVeto = 0;
@@ -235,7 +243,7 @@ test('simultaneous major deviation and frequency deterioration freezes relaxatio
 });
 
 test('recovery lowers evidence and returns the temporary threshold toward baseline', () => {
-  const adaptive = new AdaptiveThresholdController();
+  const adaptive = createAdaptiveController();
   establishMeaningfulHistory(adaptive);
   applyControlledDeterioration(adaptive);
   const elevated = adaptive.getState().pitchAdjustment;

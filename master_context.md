@@ -135,6 +135,7 @@ posture-belt/
 │   ├── calibration.ts
 │   ├── adaptiveFeedback.ts
 │   ├── adaptiveThreshold.ts
+│   ├── adaptiveThresholdConfig.ts
 │   ├── adaptiveThresholdFeatures.ts
 │   ├── correctionResponse.ts
 │   ├── deviation.ts
@@ -148,6 +149,7 @@ posture-belt/
 │   ├── adaptiveFeedback.test.mjs
 │   ├── adaptiveFullIntegration.test.mjs
 │   ├── adaptiveSystemEvaluation.test.mjs
+│   ├── adaptiveThresholdDemo.test.mjs
 │   ├── adaptiveThresholdLongSession.test.mjs
 │   ├── adaptiveThreshold.test.mjs
 │   ├── loadTypeScriptModule.mjs
@@ -698,15 +700,20 @@ be unjustified. The equal-weight function is isolated so a future model
 can replace it if suitable evidence becomes available. No machine
 learning or reinforcement learning is currently implemented.
 
-Feature trends use timestamp-aware two-minute short-term and ten-minute
-long-term EMAs. The combined score uses a separate ten-minute EMA, which
-persists continuously for the monitoring session rather than resetting
-at a fixed window boundary. EMA updates are bounded to `0–1` and depend
-on elapsed time rather than an assumed 50 Hz sample rate.
+Feature trends use timestamp-aware short-term and long-term EMAs. The
+combined score uses a separate evidence EMA, which persists continuously
+for the monitoring session rather than resetting at a fixed window
+boundary. EMA updates are bounded to `0–1` and depend on elapsed time
+rather than an assumed 50 Hz sample rate.
 
-Current safety and adjustment constants are:
+The normal/production configuration remains available in
+`processing/adaptiveThresholdConfig.ts` with:
 
 ``` text
+short-term feature EMA = 2 minutes
+long-term feature EMA = 10 minutes
+evidence EMA = 10 minutes
+good-posture duration reference = 60 seconds
 minimum observation duration = 10 minutes
 minimum valid processed samples = 100
 minimum completed correction responses = 3
@@ -714,16 +721,57 @@ minimum completed good-posture periods per axis = 2
 evidence activation threshold = 0.30
 maximum adaptive adjustment = +3°
 maximum adjustment rate = 0.25° per minute
+maximum elapsed adjustment step = 1 minute
 severe deviation = more than 2 × current effective threshold
 major deterioration = both deviation-trend and frequency evidence ≥ 0.75
 ```
+
+## TEMPORARY REVIEW DEMO CONFIGURATION
+
+The production adaptive-threshold timing is intentionally designed for
+prolonged-use behavioral evidence and may take substantially longer than
+a project review permits. For the current review period,
+`ADAPTIVE_THRESHOLD_DEMO_MODE` is deliberately set to `true` so the same
+feature → evidence → EMA → safety gates → bounded threshold mechanism can
+be observed in approximately 1–2 minutes.
+
+The temporary demo profile changes only these temporal parameters:
+
+``` text
+short-term feature EMA = 5 seconds
+long-term feature EMA = 30 seconds
+evidence EMA = 15 seconds
+good-posture duration reference = 10 seconds
+minimum observation duration = 20 seconds
+maximum adjustment rate = 1.5° per minute
+maximum elapsed adjustment step = 5 seconds
+```
+
+The demo profile does not script deterioration or adapt merely because
+time passed. Actual behavioral evidence remains required. It preserves
+the production feature definitions, normalization, equal weighting,
+minimum sample/correction/good-period counts, evidence activation
+threshold, instability veto, severe-deviation veto, major-deterioration
+veto, immutable calibration baseline, and `+3°` maximum adjustment.
+Adaptive feedback is unchanged.
+
+These compressed timings are temporary demonstration settings. They are
+not production-ready, scientifically validated, or final real-world
+tuning. The active mode is included as `adaptiveThresholdMode: DEMO` in
+the development-only device diagnostic and is not added to production UI.
+
+POST-REVIEW TODO:
+Restore `ADAPTIVE_THRESHOLD_DEMO_MODE` to the normal/production configuration.
+Re-run the complete adaptive evaluation suite.
+Re-run TypeScript and Expo validation.
+Commit the restoration separately.
 
 Insufficient data, existing stability failure, severe deviation, or
 major deterioration freezes threshold movement. High evidence cannot
 override these vetoes. When gates pass, the adjustment moves gradually
 toward the evidence-derived target. When evidence decreases, it can move
 back toward `0°`; the adaptive threshold never becomes a new baseline.
-Elapsed movement per sample is capped at one minute of adjustment so a
+Elapsed movement per sample is capped by the active configuration so a
 large timestamp gap cannot cause an abrupt jump.
 
 The existing sample fields `pitchThreshold` and `rollThreshold` store the
@@ -2656,6 +2704,7 @@ correction state and current/final response time
 correction timestamps, deviation values, and direction
 pitch/roll adaptive evidence and evidence EMA
 canonical threshold, effective adaptive threshold, and adjustment
+active adaptive-threshold mode (`DEMO` during the temporary review configuration)
 adaptive-feedback mode
 ```
 

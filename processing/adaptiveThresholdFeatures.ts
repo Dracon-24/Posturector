@@ -1,11 +1,11 @@
-export const SHORT_TERM_FEATURE_TAU = 2 * 60 * 1000;
-export const LONG_TERM_FEATURE_TAU = 10 * 60 * 1000;
-export const EVIDENCE_EMA_TAU = 10 * 60 * 1000;
+import {
+    ACTIVE_ADAPTIVE_THRESHOLD_CONFIG,
+    AdaptiveThresholdConfig,
+} from './adaptiveThresholdConfig';
 
 const TREND_NORMALIZATION_SPAN = 0.25;
 const MAX_DEVIATION_RATIO = 2;
 const MAX_CORRECTION_RESPONSE_TIME = 12;
-const GOOD_POSTURE_DURATION_REFERENCE = 60;
 const NEAR_THRESHOLD_LOWER_RATIO = 0.75;
 
 export interface NormalizedBehavioralFeatures {
@@ -40,11 +40,18 @@ export function normalizeCorrectionResponse(responseTime: number): number {
     return clamp01(responseTime / MAX_CORRECTION_RESPONSE_TIME);
 }
 
-export function normalizeGoodPostureDuration(duration: number): number {
+export function normalizeGoodPostureDuration(
+    duration: number,
+    referenceDuration: number =
+        ACTIVE_ADAPTIVE_THRESHOLD_CONFIG.goodPostureDurationReference
+): number {
     if (!Number.isFinite(duration) || duration < 0) {
         return 0;
     }
-    return clamp01(duration / GOOD_POSTURE_DURATION_REFERENCE);
+    if (!Number.isFinite(referenceDuration) || referenceDuration <= 0) {
+        return 0;
+    }
+    return clamp01(duration / referenceDuration);
 }
 
 export function normalizeIncreasingTrend(shortTerm: number, longTerm: number): number {
@@ -117,8 +124,13 @@ export class TimeAwareEma {
 }
 
 class TrendPair {
-    private readonly shortTerm = new TimeAwareEma(SHORT_TERM_FEATURE_TAU);
-    private readonly longTerm = new TimeAwareEma(LONG_TERM_FEATURE_TAU);
+    private readonly shortTerm: TimeAwareEma;
+    private readonly longTerm: TimeAwareEma;
+
+    constructor(config: AdaptiveThresholdConfig) {
+        this.shortTerm = new TimeAwareEma(config.shortTermFeatureTau);
+        this.longTerm = new TimeAwareEma(config.longTermFeatureTau);
+    }
 
     update(value: number, timestamp: number): void {
         this.shortTerm.update(value, timestamp);
@@ -140,8 +152,14 @@ class TrendPair {
 }
 
 export class CorrectionTrendFeature {
-    private readonly trend = new TrendPair();
+    private readonly trend: TrendPair;
     private responseCount = 0;
+
+    constructor(
+        config: AdaptiveThresholdConfig = ACTIVE_ADAPTIVE_THRESHOLD_CONFIG
+    ) {
+        this.trend = new TrendPair(config);
+    }
 
     record(responseTime: number, timestamp: number): void {
         if (!Number.isFinite(responseTime) || responseTime < 0 || !Number.isFinite(timestamp)) {
@@ -166,12 +184,22 @@ export class CorrectionTrendFeature {
 }
 
 export class AxisBehaviorFeatureExtractor {
-    private readonly deviation = new TrendPair();
-    private readonly frequency = new TrendPair();
-    private readonly goodPostureDuration = new TrendPair();
-    private readonly nearThreshold = new TrendPair();
+    private readonly deviation: TrendPair;
+    private readonly frequency: TrendPair;
+    private readonly goodPostureDuration: TrendPair;
+    private readonly nearThreshold: TrendPair;
     private goodPostureStart: number | null = null;
     private goodPosturePeriodCount = 0;
+
+    constructor(
+        private readonly config: AdaptiveThresholdConfig =
+            ACTIVE_ADAPTIVE_THRESHOLD_CONFIG
+    ) {
+        this.deviation = new TrendPair(config);
+        this.frequency = new TrendPair(config);
+        this.goodPostureDuration = new TrendPair(config);
+        this.nearThreshold = new TrendPair(config);
+    }
 
     update(deviation: number, threshold: number, timestamp: number): void {
         const outside = deviation > threshold;
@@ -184,7 +212,13 @@ export class AxisBehaviorFeatureExtractor {
         }
         if (outside && this.goodPostureStart !== null) {
             const duration = Math.max(0, (timestamp - this.goodPostureStart) / 1000);
-            this.goodPostureDuration.update(normalizeGoodPostureDuration(duration), timestamp);
+            this.goodPostureDuration.update(
+                normalizeGoodPostureDuration(
+                    duration,
+                    this.config.goodPostureDurationReference
+                ),
+                timestamp
+            );
             this.goodPosturePeriodCount += 1;
             this.goodPostureStart = null;
         }
