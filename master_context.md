@@ -127,6 +127,8 @@ posture-belt/
 ├── .gitignore
 ├── AGENTS.md
 ├── master_context.md
+├── docs/
+│   └── final_validation_matrix_and_hardware_protocol.md
 │
 ├── components/
 │   ├── HistoricalAnalyticsDashboard.tsx
@@ -3230,7 +3232,39 @@ real-time feedback path.
 
 ------------------------------------------------------------------------
 
-# 71. IMMEDIATE NEXT ACTION
+# 71. FINAL PRE-HARDWARE VALIDATION STATUS
+
+The software implementation is frozen pending physical-device validation.
+The requirements-to-implementation matrix, validation classification,
+software-frozen boundaries, definitive Experiments A–N, evidence rules, and
+blank result template are maintained in:
+
+``` text
+docs/final_validation_matrix_and_hardware_protocol.md
+```
+
+Software validation demonstrates deterministic algorithm, lifecycle,
+persistence, analytics, and presentation behavior. It does not establish
+physical IMU cadence, mounting/sign correspondence, on-body calibration
+repeatability, physical transient behavior, human adaptive response, or haptic
+perception. Those items are explicitly pending hardware validation and must not
+be described as passed until measurements have been recorded on an actual
+device.
+
+The accelerated adaptive threshold configuration remains intentionally:
+
+``` text
+DEMO — ACCELERATED ADAPTIVE TIMING
+```
+
+The `DEMO` → `PRODUCTION` switch is postponed until after the real-device
+protocol is completed. Hardware observations must be recorded before any
+parameter or algorithm change is considered; an unexpected observation is not
+itself authorization to modify a frozen component.
+
+------------------------------------------------------------------------
+
+# 72. IMMEDIATE NEXT ACTION
 
 Run the documented real-device validation protocol using a connected
 Android device and the development diagnostic snapshots. Record actual
@@ -3243,7 +3277,7 @@ adaptation is not implemented.
 
 ------------------------------------------------------------------------
 
-# 72. FINAL DEVELOPMENT RULE
+# 73. FINAL DEVELOPMENT RULE
 
 Treat the current real-time posture algorithm as the stable foundation.
 
